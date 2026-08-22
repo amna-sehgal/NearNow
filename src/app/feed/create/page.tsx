@@ -1,7 +1,11 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Zap, Trophy, Rocket, Search, GitMerge, Plus, X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, Zap, Trophy, Rocket, Search, GitMerge, Plus, X, Loader2, AlertCircle, LogIn } from 'lucide-react';
+import { createActivityAction } from '@/lib/actions/activities';
+import { getCurrentUser } from '@/lib/actions/auth';
+import { createClient } from '@/lib/supabase/client';
 
 const POST_TYPES = [
   { key: 'started_project', icon: Plus,     label: 'New Project',     desc: 'Started something new' },
@@ -15,12 +19,44 @@ const POST_TYPES = [
 const SUGGESTED_TAGS = ['React', 'Node.js', 'Python', 'Next.js', 'MongoDB', 'TypeScript', 'Flutter', 'TensorFlow', 'Docker', 'AWS', 'Figma', 'PostgreSQL'];
 
 export default function CreatePost() {
+  const router = useRouter();
   const [selectedType, setSelectedType] = useState('');
   const [content, setContent] = useState('');
   const [meta, setMeta] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [user, setUser] = useState<any>(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    async function checkAuth() {
+      try {
+        // 1. Try server action getCurrentUser() (checks server cookies)
+        const currentUser = await getCurrentUser();
+        if (currentUser?.profile) {
+          setUser({ id: currentUser.id, ...currentUser.profile });
+          return;
+        }
+
+        // 2. Try browser client
+        const supabase = createClient();
+        const { data: { user: authUser } } = await supabase.auth.getUser();
+        if (authUser) {
+          setUser(authUser);
+        } else {
+          setUser(null);
+        }
+      } catch {
+        setUser(null);
+      } finally {
+        setCheckingAuth(false);
+      }
+    }
+    checkAuth();
+  }, []);
 
   const addTag = (t: string) => {
     const clean = t.trim();
@@ -32,10 +68,35 @@ export default function CreatePost() {
 
   const removeTag = (t: string) => setTags(tags.filter(x => x !== t));
 
+  const handleSubmit = async () => {
+    if (!selectedType || !content.trim()) return;
+    setErrorMsg(null);
+    setSubmitting(true);
+
+    try {
+      const res = await createActivityAction({
+        type: selectedType,
+        content: content.trim(),
+        meta: meta.trim() || undefined,
+        tags,
+      });
+
+      if (res.error) {
+        setErrorMsg(res.error);
+      } else {
+        setSubmitted(true);
+      }
+    } catch {
+      setErrorMsg('Failed to submit post to database.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   if (submitted) {
     return (
       <div className="min-h-screen flex items-center justify-center px-6" style={{ background: '#0D0D0F' }}>
-        <div className="text-center max-w-sm">
+        <div className="text-center max-w-sm border rounded-2xl p-8" style={{ background: '#141416', borderColor: '#2A2A30' }}>
           <div
             className="w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6"
             style={{ background: 'rgba(200,241,53,0.1)', border: '2px solid rgba(200,241,53,0.3)' }}
@@ -46,9 +107,9 @@ export default function CreatePost() {
             Activity posted!
           </h2>
           <p className="font-body text-sm mb-8" style={{ color: '#7A7A8C' }}>
-            Your update is live in the feed. Other builders can see it now.
+            Your update is live in the database and feed. Other builders can see it now.
           </p>
-          <div className="flex gap-3 justify-center">
+          <div className="flex gap-3 justify-center flex-wrap">
             <Link
               href="/feed"
               className="font-display font-semibold text-sm px-5 py-2.5 rounded-xl transition-all"
@@ -57,7 +118,7 @@ export default function CreatePost() {
               View Feed
             </Link>
             <button
-              onClick={() => { setSubmitted(false); setSelectedType(''); setContent(''); setMeta(''); setTags([]); }}
+              onClick={() => { setSubmitted(false); setSelectedType(''); setContent(''); setMeta(''); setTags([]); setErrorMsg(null); }}
               className="font-body text-sm px-5 py-2.5 rounded-xl border transition-all"
               style={{ borderColor: '#2A2A30', color: '#7A7A8C' }}
             >
@@ -90,7 +151,7 @@ export default function CreatePost() {
       </header>
 
       <main className="max-w-xl mx-auto px-4 md:px-6 py-8">
-        <div className="mb-8">
+        <div className="mb-6">
           <h1 className="font-display font-bold text-2xl mb-1" style={{ color: '#E8E8F0' }}>
             Share what you&apos;re building
           </h1>
@@ -98,6 +159,40 @@ export default function CreatePost() {
             Let other builders see your progress and opportunities.
           </p>
         </div>
+
+        {/* Auth Check Warning */}
+        {!checkingAuth && !user && (
+          <div
+            className="flex items-center justify-between p-4 rounded-xl mb-6 border font-body text-sm"
+            style={{ background: 'rgba(200,241,53,0.06)', borderColor: 'rgba(200,241,53,0.25)', color: '#E8E8F0' }}
+          >
+            <div className="flex items-center gap-2.5">
+              <LogIn size={18} style={{ color: '#C8F135' }} />
+              <div>
+                <span className="font-semibold">Sign in required</span>
+                <p className="text-xs" style={{ color: '#7A7A8C' }}>You need an account to post to the live feed.</p>
+              </div>
+            </div>
+            <Link
+              href="/auth"
+              className="font-display font-semibold text-xs px-3 py-1.5 rounded-lg flex-shrink-0"
+              style={{ background: '#C8F135', color: '#0D0D0F' }}
+            >
+              Sign In
+            </Link>
+          </div>
+        )}
+
+        {/* Error message */}
+        {errorMsg && (
+          <div
+            className="flex items-start gap-2.5 p-3 rounded-xl mb-6 border font-body text-xs leading-relaxed"
+            style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.3)', color: '#F87171' }}
+          >
+            <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+            <div>{errorMsg}</div>
+          </div>
+        )}
 
         {/* Type selector */}
         <div className="mb-6">
@@ -111,6 +206,7 @@ export default function CreatePost() {
               return (
                 <button
                   key={t.key}
+                  type="button"
                   onClick={() => setSelectedType(t.key)}
                   className="flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all duration-200"
                   style={{
@@ -191,7 +287,7 @@ export default function CreatePost() {
                   style={{ background: 'rgba(200,241,53,0.1)', border: '1px solid rgba(200,241,53,0.2)', color: '#C8F135' }}
                 >
                   {t}
-                  <button onClick={() => removeTag(t)}>
+                  <button type="button" onClick={() => removeTag(t)}>
                     <X size={10} style={{ color: '#9BB82A' }} />
                   </button>
                 </span>
@@ -216,6 +312,7 @@ export default function CreatePost() {
             {SUGGESTED_TAGS.filter(t => !tags.includes(t)).slice(0, 8).map(t => (
               <button
                 key={t}
+                type="button"
                 onClick={() => addTag(t)}
                 className="font-mono text-[11px] px-2 py-0.5 rounded-full border transition-all duration-150"
                 style={{ background: '#141416', borderColor: '#2A2A30', color: '#7A7A8C' }}
@@ -230,18 +327,27 @@ export default function CreatePost() {
 
         {/* Submit */}
         <button
-          onClick={() => { if (selectedType && content.trim()) setSubmitted(true); }}
-          disabled={!selectedType || !content.trim()}
-          className="w-full h-12 rounded-xl font-display font-semibold text-sm transition-all duration-200"
+          type="button"
+          onClick={handleSubmit}
+          disabled={!selectedType || !content.trim() || submitting || !user}
+          className="w-full h-12 rounded-xl font-display font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-2"
           style={{
-            background: selectedType && content.trim() ? '#C8F135' : '#1C1C20',
-            color: selectedType && content.trim() ? '#0D0D0F' : '#3A3A46',
-            cursor: selectedType && content.trim() ? 'pointer' : 'not-allowed',
+            background: selectedType && content.trim() && user ? '#C8F135' : '#1C1C20',
+            color: selectedType && content.trim() && user ? '#0D0D0F' : '#3A3A46',
+            cursor: selectedType && content.trim() && user && !submitting ? 'pointer' : 'not-allowed',
+            opacity: submitting ? 0.7 : 1,
           }}
-          onMouseEnter={e => { if (selectedType && content.trim()) { e.currentTarget.style.background = '#d4f547'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(200,241,53,0.2)'; } }}
-          onMouseLeave={e => { if (selectedType && content.trim()) { e.currentTarget.style.background = '#C8F135'; e.currentTarget.style.boxShadow = 'none'; } }}
+          onMouseEnter={e => { if (selectedType && content.trim() && user && !submitting) { e.currentTarget.style.background = '#d4f547'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(200,241,53,0.2)'; } }}
+          onMouseLeave={e => { if (selectedType && content.trim() && user && !submitting) { e.currentTarget.style.background = '#C8F135'; e.currentTarget.style.boxShadow = 'none'; } }}
         >
-          Post to Feed
+          {submitting ? (
+            <>
+              <Loader2 size={16} className="animate-spin" />
+              Saving to Database...
+            </>
+          ) : (
+            'Post to Feed'
+          )}
         </button>
       </main>
     </div>

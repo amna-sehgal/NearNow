@@ -1,9 +1,10 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import ActivityCard from '@/components/ui/ActivityCard';
-import { ACTIVITIES } from '@/lib/data';
-import { Plus, Filter, Search, Zap, Trophy, Code2, Rocket, GitMerge } from 'lucide-react';
+import { Activity, ACTIVITIES } from '@/lib/data';
+import { fetchActivities } from '@/lib/actions/activities';
+import { Plus, Search, Zap, Trophy, Code2, Rocket, GitMerge, Loader2 } from 'lucide-react';
 
 const FILTERS = [
   { key: 'all', label: 'All' },
@@ -17,12 +18,38 @@ const FILTERS = [
 export default function FeedPage() {
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [activities, setActivities] = useState<Activity[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filtered = ACTIVITIES.filter(a => {
+  useEffect(() => {
+    let isMounted = true;
+    async function loadData() {
+      setLoading(true);
+      try {
+        const data = await fetchActivities({ filter: activeFilter });
+        if (isMounted) {
+          setActivities(data);
+        }
+      } catch {
+        if (isMounted) {
+          setActivities(ACTIVITIES);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    }
+    loadData();
+    return () => { isMounted = false; };
+  }, [activeFilter]);
+
+  const filtered = activities.filter(a => {
     const matchesFilter = activeFilter === 'all' || a.type === activeFilter;
     const matchesSearch = !searchQuery || 
       a.user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       a.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      a.user.college.toLowerCase().includes(searchQuery.toLowerCase()) ||
       a.tags?.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchesFilter && matchesSearch;
   });
@@ -112,10 +139,22 @@ export default function FeedPage() {
           </span>
         </div>
 
-        {filtered.length === 0 ? (
-          <div className="text-center py-20">
-            <p className="font-display text-lg" style={{ color: '#3A3A46' }}>Nothing here yet.</p>
-            <p className="font-body text-sm mt-1" style={{ color: '#3A3A46' }}>Try a different filter or search.</p>
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-3">
+            <Loader2 size={24} className="animate-spin" style={{ color: '#C8F135' }} />
+            <p className="font-mono text-xs" style={{ color: '#7A7A8C' }}>Fetching live activity feed...</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="text-center py-20 border rounded-2xl p-8" style={{ background: '#141416', borderColor: '#2A2A30' }}>
+            <p className="font-display font-medium text-lg" style={{ color: '#E8E8F0' }}>Nothing nearby yet.</p>
+            <p className="font-body text-sm mt-1" style={{ color: '#7A7A8C' }}>Try a different filter or search, or share your first build!</p>
+            <Link
+              href="/feed/create"
+              className="inline-flex items-center gap-1.5 mt-5 h-9 px-4 rounded-xl font-display font-semibold text-xs transition-all"
+              style={{ background: '#C8F135', color: '#0D0D0F' }}
+            >
+              <Plus size={14} /> Create Activity Post
+            </Link>
           </div>
         ) : (
           <div className="flex flex-col gap-3">

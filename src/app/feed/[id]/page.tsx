@@ -1,12 +1,12 @@
 'use client';
-import { use } from 'react';
+import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
-import { ACTIVITIES } from '@/lib/data';
 import Avatar from '@/components/ui/Avatar';
 import Tag from '@/components/ui/Tag';
 import ActivityCard from '@/components/ui/ActivityCard';
-import { ArrowLeft, Zap, Trophy, Code2, Rocket, GitMerge, Plus, Search, ExternalLink, UserPlus } from 'lucide-react';
+import { Activity } from '@/lib/data';
+import { fetchActivityById, fetchActivities } from '@/lib/actions/activities';
+import { ArrowLeft, Zap, Trophy, Code2, Rocket, GitMerge, Plus, Search, ExternalLink, UserPlus, Loader2, AlertCircle } from 'lucide-react';
 
 const typeConfig: Record<string, { icon: React.ElementType; label: string; color: string }> = {
   earned_xp:        { icon: Zap,      label: 'Skill Mission Completed', color: '#C8F135' },
@@ -21,15 +21,79 @@ const typeConfig: Record<string, { icon: React.ElementType; label: string; color
 
 export default function ActivityDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const activity = ACTIVITIES.find(a => a.id === id);
-  if (!activity) notFound();
+  const [activity, setActivity] = useState<Activity | null>(null);
+  const [related, setRelated] = useState<Activity[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [notFoundState, setNotFoundState] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadActivity() {
+      setLoading(true);
+      setNotFoundState(false);
+      try {
+        const item = await fetchActivityById(id);
+        if (!item) {
+          if (isMounted) setNotFoundState(true);
+          return;
+        }
+
+        if (isMounted) {
+          setActivity(item);
+        }
+
+        // Fetch related activities
+        const all = await fetchActivities();
+        const relatedItems = all.filter(a => a.id !== item.id && (
+          a.user.college === item.user.college ||
+          a.tags?.some(t => item.tags?.includes(t))
+        )).slice(0, 3);
+
+        if (isMounted) {
+          setRelated(relatedItems);
+        }
+      } catch {
+        if (isMounted) setNotFoundState(true);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+    loadActivity();
+    return () => { isMounted = false; };
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3" style={{ background: '#0D0D0F' }}>
+        <Loader2 size={24} className="animate-spin" style={{ color: '#C8F135' }} />
+        <p className="font-mono text-xs" style={{ color: '#7A7A8C' }}>Loading activity details...</p>
+      </div>
+    );
+  }
+
+  if (notFoundState || !activity) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center px-6" style={{ background: '#0D0D0F' }}>
+        <div className="text-center max-w-md border rounded-2xl p-8" style={{ background: '#141416', borderColor: '#2A2A30' }}>
+          <AlertCircle size={32} className="mx-auto mb-3" style={{ color: '#F87171' }} />
+          <h2 className="font-display font-bold text-xl mb-2" style={{ color: '#E8E8F0' }}>Activity Not Found</h2>
+          <p className="font-body text-sm mb-6" style={{ color: '#7A7A8C' }}>
+            The requested activity could not be found in the database. It may have been removed or the ID is invalid.
+          </p>
+          <Link
+            href="/feed"
+            className="inline-flex items-center gap-2 font-display font-semibold text-xs px-5 py-2.5 rounded-xl transition-all"
+            style={{ background: '#C8F135', color: '#0D0D0F' }}
+          >
+            <ArrowLeft size={14} /> Back to Feed
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   const config = typeConfig[activity.type] || typeConfig.earned_xp;
   const Icon = config.icon;
-
-  const related = ACTIVITIES.filter(a => a.id !== activity.id && (
-    a.tags?.some(t => activity.tags?.includes(t)) || a.user.college === activity.user.college
-  )).slice(0, 3);
 
   return (
     <div className="min-h-screen" style={{ background: '#0D0D0F' }}>
