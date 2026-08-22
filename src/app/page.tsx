@@ -5,7 +5,8 @@ import dynamic from 'next/dynamic';
 import Navbar from '@/components/landing/Navbar';
 import Ticker from '@/components/landing/Ticker';
 import ActivityCard from '@/components/ui/ActivityCard';
-import { ACTIVITIES, STATS } from '@/lib/data';
+import { Activity, ACTIVITIES, STATS } from '@/lib/data';
+import { fetchActivities } from '@/lib/actions/activities';
 import { ArrowRight, Users, Layers, Map, Star } from 'lucide-react';
 
 const ShapeGrid = dynamic(() => import('@/components/ui/ShapeGrid'), { ssr: false });
@@ -42,6 +43,7 @@ const FEATURES = [
 export default function LandingPage() {
   const [mounted, setMounted] = useState(false);
   const [strokeReady, setStrokeReady] = useState(false);
+  const [activities, setActivities] = useState<Activity[]>(ACTIVITIES.slice(0, 5));
   const feedRef = useInView(0.05);
   const featuresRef = useInView(0.1);
 
@@ -52,7 +54,19 @@ export default function LandingPage() {
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
 
-  const previewActivities = ACTIVITIES.slice(0, 5);
+  useEffect(() => {
+    async function loadHeroFeed() {
+      try {
+        const live = await fetchActivities();
+        if (live && live.length > 0) {
+          setActivities(live.slice(0, 5));
+        }
+      } catch {
+        // Fallback to static ACTIVITIES slice
+      }
+    }
+    loadHeroFeed();
+  }, []);
 
   return (
     <main className="min-h-screen" style={{ background: '#0D0D0F' }}>
@@ -211,7 +225,7 @@ export default function LandingPage() {
           </div>
 
           <div className="flex flex-col gap-3 relative">
-            {previewActivities.map((activity, i) => (
+            {activities.map((activity, i) => (
               <div key={activity.id} className="transition-all duration-700" style={{ opacity: feedRef.inView ? 1 : 0, transform: feedRef.inView ? 'translateY(0)' : 'translateY(24px)', transitionDelay: `${i * 80}ms` }}>
                 <ActivityCard activity={activity} blurred={i >= 3} />
               </div>
