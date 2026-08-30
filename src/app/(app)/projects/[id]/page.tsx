@@ -1,12 +1,13 @@
 // src/app/(app)/projects/[id]/page.tsx
 'use client';
-import { use, useState } from 'react';
+import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { PROJECTS } from '@/lib/mock';
+import { fetchProjectById, applyForProjectRoleAction } from '@/lib/actions/projects';
+import { ProjectFull } from '@/lib/mock';
 import Avatar from '@/components/ui/Avatar';
 import Tag from '@/components/ui/Tag';
-import { ArrowLeft, Globe, Users, CheckSquare, Square, Send, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Globe, Users, CheckSquare, Square, Send, Loader2, AlertCircle } from 'lucide-react';
 
 function GithubIcon({ size = 12 }: { size?: number }) {
   return (
@@ -18,15 +19,71 @@ function GithubIcon({ size = 12 }: { size?: number }) {
 
 export default function ProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const project = PROJECTS.find(p => p.id === id);
-  if (!project) notFound();
-
+  const [project, setProject] = useState<ProjectFull | null>(null);
+  const [loading, setLoading] = useState(true);
   const [applied, setApplied] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [showApplyFor, setShowApplyFor] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadProject() {
+      setLoading(true);
+      try {
+        const data = await fetchProjectById(id);
+        if (isMounted) setProject(data);
+      } catch (err) {
+        console.error('[ProjectDetail Load Error]:', err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+    loadProject();
+    return () => { isMounted = false; };
+  }, [id]);
+
+  const handleApply = async (role: string) => {
+    if (!message.trim() || !project) return;
+    setErrorMsg(null);
+    setSubmitting(true);
+    try {
+      const res = await applyForProjectRoleAction({
+        projectId: project.id,
+        role,
+        message: message.trim(),
+      });
+      if (res.error) {
+        setErrorMsg(res.error);
+      } else {
+        setApplied(role);
+        setShowApplyFor(null);
+        setMessage('');
+        setProject({ ...project, applicants: (project.applicants || 0) + 1 });
+      }
+    } catch {
+      setErrorMsg('Failed to send role application.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center gap-3" style={{ background: '#0D0D0F' }}>
+        <Loader2 size={24} className="animate-spin" style={{ color: '#C8F135' }} />
+        <span className="font-mono text-xs" style={{ color: '#7A7A8C' }}>Loading project details...</span>
+      </div>
+    );
+  }
+
+  if (!project) {
+    notFound();
+  }
 
   const doneCount = project.tasks.filter(t => t.done).length;
-  const progress = Math.round((doneCount / project.tasks.length) * 100);
+  const progress = project.tasks.length > 0 ? Math.round((doneCount / project.tasks.length) * 100) : 0;
   const openRoles = project.openRoles.filter(r => !r.filled);
 
   return (
@@ -46,6 +103,16 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
       </header>
 
       <main className="max-w-3xl mx-auto px-4 md:px-8 py-8 flex flex-col gap-6">
+
+        {errorMsg && (
+          <div
+            className="flex items-start gap-2.5 p-3 rounded-xl border font-body text-xs leading-relaxed"
+            style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.3)', color: '#F87171' }}
+          >
+            <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+            <div>{errorMsg}</div>
+          </div>
+        )}
 
         {/* ── HERO CARD ── */}
         <div className="rounded-2xl border p-6" style={{ background: '#141416', borderColor: '#2A2A30' }}>
@@ -83,7 +150,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
           {/* Links */}
           <div className="flex gap-3 flex-wrap">
             {project.githubUrl && (
-              <a href={`https://${project.githubUrl}`} target="_blank" rel="noreferrer"
+              <a href={`https://${project.githubUrl.replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer"
                 className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-lg border transition-all"
                 style={{ borderColor: '#2A2A30', color: '#7A7A8C', background: '#1C1C20' }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = '#C8F135'; e.currentTarget.style.color = '#C8F135'; }}
@@ -93,7 +160,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
               </a>
             )}
             {project.liveUrl && (
-              <a href={`https://${project.liveUrl}`} target="_blank" rel="noreferrer"
+              <a href={`https://${project.liveUrl.replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer"
                 className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-lg border transition-all"
                 style={{ borderColor: '#2A2A30', color: '#7A7A8C', background: '#1C1C20' }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = '#9BB82A'; e.currentTarget.style.color = '#9BB82A'; }}
@@ -143,7 +210,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                   {showApplyFor === role.role && applied !== role.role && (
                     <div className="border-t pt-3 mt-1" style={{ borderColor: '#2A2A30' }}>
                       <textarea
-                        placeholder={`Tell ${project.members[0]?.name.split(' ')[0]} why you'd be great as ${role.role}...`}
+                        placeholder={`Tell ${project.members[0]?.name.split(' ')[0] || 'the project owner'} why you'd be great as ${role.role}...`}
                         value={message}
                         onChange={e => setMessage(e.target.value)}
                         rows={3}
@@ -157,12 +224,12 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                           Cancel
                         </button>
                         <button
-                          onClick={() => { setApplied(role.role); setShowApplyFor(null); setMessage(''); }}
-                          disabled={!message.trim()}
+                          onClick={() => handleApply(role.role)}
+                          disabled={!message.trim() || submitting}
                           className="flex items-center gap-1.5 font-display font-medium text-xs px-3 py-1.5 rounded-lg transition-all"
-                          style={{ background: message.trim() ? '#C8F135' : '#1C1C20', color: message.trim() ? '#0D0D0F' : '#3A3A46' }}
+                          style={{ background: message.trim() && !submitting ? '#C8F135' : '#1C1C20', color: message.trim() && !submitting ? '#0D0D0F' : '#3A3A46' }}
                         >
-                          <Send size={11} /> Send
+                          {submitting ? <Loader2 size={11} className="animate-spin" /> : <Send size={11} />} Send Application
                         </button>
                       </div>
                     </div>
@@ -184,7 +251,7 @@ export default function ProjectDetailPage({ params }: { params: Promise<{ id: st
                 className="card-hover flex items-center gap-3 p-3 rounded-xl border"
                 style={{ background: '#141416', borderColor: '#2A2A30' }}
               >
-                <Avatar initials={m.avatar} size="sm" />
+                <Avatar initials={m.avatar || 'SB'} size="sm" />
                 <div className="flex-1">
                   <span className="font-display font-medium text-sm" style={{ color: '#E8E8F0' }}>{m.name}</span>
                   <span className="ml-2 font-body text-xs" style={{ color: '#7A7A8C' }}>{m.role}</span>
