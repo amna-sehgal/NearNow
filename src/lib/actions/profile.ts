@@ -134,14 +134,26 @@ export async function updateProfile(payload: {
       return { error: 'You must be signed in to update your profile.' };
     }
 
-    const avatar = payload.name.trim().split(' ').length >= 2
+    // Fetch existing profile to preserve handle, avatar, etc.
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('handle, avatar')
+      .eq('id', user.id)
+      .single();
+
+    const fallbackHandle = (user.email?.split('@')[0] || payload.name).toLowerCase().replace(/[^a-z0-9_]/g, '') || 'builder';
+    const handle = existingProfile?.handle || fallbackHandle;
+
+    const computedAvatar = payload.name.trim().split(' ').length >= 2
       ? (payload.name.trim().split(' ')[0][0] + payload.name.trim().split(' ')[1][0]).toUpperCase()
       : payload.name.slice(0, 2).toUpperCase();
+    const avatar = existingProfile?.avatar || computedAvatar;
 
     const { error } = await supabase
       .from('profiles')
       .upsert({
         id: user.id,
+        handle,
         name: payload.name.trim(),
         avatar,
         bio: payload.bio.trim(),
