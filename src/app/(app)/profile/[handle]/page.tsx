@@ -1,15 +1,20 @@
 // src/app/(app)/profile/[handle]/page.tsx
 'use client';
-import { use } from 'react';
+import { use, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { PROFILES, PROJECTS } from '@/lib/mock';
+import { fetchProfileByHandle } from '@/lib/actions/profile';
+import { fetchActivities } from '@/lib/actions/activities';
+import { fetchProjects } from '@/lib/actions/projects';
+import { getCurrentUser } from '@/lib/actions/auth';
+import { UserProfile, ProjectFull } from '@/lib/mock';
+import { Activity } from '@/lib/data';
 import Avatar from '@/components/ui/Avatar';
 import Tag from '@/components/ui/Tag';
 import ActivityCard from '@/components/ui/ActivityCard';
-import { ACTIVITIES } from '@/lib/data';
-import {Globe, MapPin, GraduationCap,
-  Edit3, Star, Zap, Trophy, GitMerge, ExternalLink
+import {
+  Globe, MapPin, GraduationCap,
+  Edit3, Star, ExternalLink, Loader2
 } from 'lucide-react';
 
 function GithubIcon({ size = 12 }: { size?: number }) {
@@ -19,6 +24,7 @@ function GithubIcon({ size = 12 }: { size?: number }) {
     </svg>
   );
 }
+
 function LinkedinIcon({ size = 12 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
@@ -38,14 +44,76 @@ function StatPill({ value, label }: { value: number; label: string }) {
 
 export default function ProfilePage({ params }: { params: Promise<{ handle: string }> }) {
   const { handle } = use(params);
-  const profile = PROFILES[handle];
-  if (!profile) notFound();
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [isMe, setIsMe] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [userProjects, setUserProjects] = useState<ProjectFull[]>([]);
+  const [userActivity, setUserActivity] = useState<Activity[]>([]);
 
-  const isMe = handle === 'amna_s'; // swap with real auth
-  const userProjects = PROJECTS.filter(p => p.members.some(m => m.handle === handle));
-  const userActivity = ACTIVITIES.filter(a => a.user.handle === handle);
+  useEffect(() => {
+    let isMounted = true;
+    async function loadData() {
+      setLoading(true);
+      try {
+        const [profRes, currentUser, allActivities, allProjects] = await Promise.all([
+          fetchProfileByHandle(handle),
+          getCurrentUser(),
+          fetchActivities(),
+          fetchProjects(),
+        ]);
 
-  const xpPercent = Math.min((profile.xp / profile.xpToNext) * 100, 100);
+        if (!isMounted) return;
+
+        if (!profRes.profile) {
+          setLoading(false);
+          return;
+        }
+
+        const p = profRes.profile;
+        setProfile(p);
+
+        // Dynamic Auth Check — NOT hardcoded handle
+        const currentlyLoggedIsMe = !!(
+          currentUser &&
+          (currentUser.profile?.handle === p.handle || currentUser.profile?.handle === handle)
+        );
+        setIsMe(currentlyLoggedIsMe);
+
+        // Filter user projects and activities
+        const filteredProjects = allProjects.filter(prj =>
+          prj.members.some(m => m.handle === handle) || prj.owner === p.handle
+        );
+        const filteredActivities = allActivities.filter(act =>
+          act.user.handle === handle
+        );
+
+        setUserProjects(filteredProjects);
+        setUserActivity(filteredActivities);
+      } catch (err) {
+        console.error('[ProfilePage Load Error]:', err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+
+    loadData();
+    return () => { isMounted = false; };
+  }, [handle]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center gap-3" style={{ background: '#0D0D0F' }}>
+        <Loader2 size={24} className="animate-spin" style={{ color: '#C8F135' }} />
+        <span className="font-mono text-xs" style={{ color: '#7A7A8C' }}>Loading profile...</span>
+      </div>
+    );
+  }
+
+  if (!profile) {
+    notFound();
+  }
+
+  const xpPercent = Math.min(((profile.xp || 0) / (profile.xpToNext || 1000)) * 100, 100);
 
   return (
     <div className="min-h-screen" style={{ background: '#0D0D0F' }}>
@@ -104,7 +172,9 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
           </div>
 
           {/* Bio */}
-          <p className="font-body text-sm leading-relaxed mb-5" style={{ color: '#E8E8F0' }}>{profile.bio}</p>
+          {profile.bio && (
+            <p className="font-body text-sm leading-relaxed mb-5" style={{ color: '#E8E8F0' }}>{profile.bio}</p>
+          )}
 
           {/* XP bar */}
           <div className="mb-5">
@@ -131,7 +201,7 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
           {/* Links */}
           <div className="flex gap-3 flex-wrap">
             {profile.links.github && (
-              <a href={`https://${profile.links.github}`} target="_blank" rel="noreferrer"
+              <a href={`https://${profile.links.github.replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer"
                 className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-lg border transition-all"
                 style={{ borderColor: '#2A2A30', color: '#7A7A8C', background: '#1C1C20' }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = '#C8F135'; e.currentTarget.style.color = '#C8F135'; }}
@@ -141,7 +211,7 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
               </a>
             )}
             {profile.links.linkedin && (
-              <a href={`https://${profile.links.linkedin}`} target="_blank" rel="noreferrer"
+              <a href={`https://${profile.links.linkedin.replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer"
                 className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-lg border transition-all"
                 style={{ borderColor: '#2A2A30', color: '#7A7A8C', background: '#1C1C20' }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = '#C8F135'; e.currentTarget.style.color = '#C8F135'; }}
@@ -151,7 +221,7 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
               </a>
             )}
             {profile.links.portfolio && (
-              <a href={`https://${profile.links.portfolio}`} target="_blank" rel="noreferrer"
+              <a href={`https://${profile.links.portfolio.replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer"
                 className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-lg border transition-all"
                 style={{ borderColor: '#2A2A30', color: '#7A7A8C', background: '#1C1C20' }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = '#C8F135'; e.currentTarget.style.color = '#C8F135'; }}
@@ -174,7 +244,7 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
         </div>
 
         {/* ── BADGES ── */}
-        {profile.badges.length > 0 && (
+        {profile.badges && profile.badges.length > 0 && (
           <div className="rounded-2xl border p-5" style={{ background: '#141416', borderColor: '#2A2A30' }}>
             <h2 className="font-mono text-xs mb-4" style={{ color: '#7A7A8C' }}>BADGES</h2>
             <div className="flex flex-wrap gap-2">
@@ -197,13 +267,21 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
           <div className="rounded-2xl border p-5" style={{ background: '#141416', borderColor: '#2A2A30' }}>
             <h2 className="font-mono text-xs mb-4" style={{ color: '#7A7A8C' }}>SKILLS</h2>
             <div className="flex flex-wrap gap-2">
-              {profile.skills.map(s => <Tag key={s} label={s} variant="dim" />)}
+              {profile.skills && profile.skills.length > 0 ? (
+                profile.skills.map(s => <Tag key={s} label={s} variant="dim" />)
+              ) : (
+                <span className="font-body text-xs" style={{ color: '#3A3A46' }}>No skills listed yet</span>
+              )}
             </div>
           </div>
           <div className="rounded-2xl border p-5" style={{ background: '#141416', borderColor: '#2A2A30' }}>
             <h2 className="font-mono text-xs mb-4" style={{ color: '#7A7A8C' }}>LOOKING TO COLLABORATE WITH</h2>
             <div className="flex flex-wrap gap-2">
-              {profile.lookingFor.map(r => <Tag key={r} label={r} variant="volt" />)}
+              {profile.lookingFor && profile.lookingFor.length > 0 ? (
+                profile.lookingFor.map(r => <Tag key={r} label={r} variant="volt" />)
+              ) : (
+                <span className="font-body text-xs" style={{ color: '#3A3A46' }}>Open to collaborations</span>
+              )}
             </div>
           </div>
         </div>
@@ -247,19 +325,17 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
         )}
 
         {/* ── RECENT ACTIVITY ── */}
-        {userActivity.length > 0 && (
+        {userActivity.length > 0 ? (
           <div>
             <h2 className="font-mono text-xs mb-4" style={{ color: '#7A7A8C' }}>RECENT ACTIVITY</h2>
             <div className="flex flex-col gap-3">
               {userActivity.map(a => <ActivityCard key={a.id} activity={a} />)}
             </div>
           </div>
-        )}
-
-        {userActivity.length === 0 && (
+        ) : (
           <div className="text-center py-12 rounded-2xl border" style={{ borderColor: '#2A2A30', background: '#141416' }}>
-            <p className="font-display text-base" style={{ color: '#3A3A46' }}>No activity yet.</p>
-            <p className="font-body text-xs mt-1" style={{ color: '#3A3A46' }}>Complete a mission or join a project to appear in the feed.</p>
+            <p className="font-display text-base" style={{ color: '#3A3A46' }}>No activity posts yet.</p>
+            <p className="font-body text-xs mt-1" style={{ color: '#3A3A46' }}>Complete a mission or post an update to appear in the feed.</p>
           </div>
         )}
       </main>

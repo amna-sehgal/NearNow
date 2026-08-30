@@ -1,28 +1,53 @@
 // src/app/(app)/projects/create/page.tsx
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, ArrowRight, Plus, X, Check } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Plus, X, Check, Loader2, AlertCircle, LogIn } from 'lucide-react';
 import Tag from '@/components/ui/Tag';
 import { ALL_STACKS, ALL_ROLES, PROJECT_CATEGORIES } from '@/lib/mock';
+import { createProjectAction } from '@/lib/actions/projects';
+import { getCurrentUser } from '@/lib/actions/auth';
 
 const STEPS = ['Idea', 'Stack', 'Team', 'Details'];
 
 export default function CreateProjectPage() {
   const router = useRouter();
   const [step, setStep] = useState(0);
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [user, setUser] = useState<any>(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
   const [form, setForm] = useState({
     name: '',
     tagline: '',
     description: '',
-    category: '',
+    category: 'EdTech / Community',
     stack: [] as string[],
     stackInput: '',
     roles: [] as { role: string; skills: string[] }[],
     github: '',
     live: '',
   });
+
+  useEffect(() => {
+    async function checkAuth() {
+      try {
+        const current = await getCurrentUser();
+        if (current?.profile) {
+          setUser(current);
+        } else {
+          setUser(null);
+        }
+      } catch {
+        setUser(null);
+      } finally {
+        setCheckingAuth(false);
+      }
+    }
+    checkAuth();
+  }, []);
 
   const canNext = [
     form.name.trim().length > 2 && form.tagline.trim().length > 5 && form.category,
@@ -37,7 +62,36 @@ export default function CreateProjectPage() {
   const addRole = (r: string) => { if (!form.roles.find(x => x.role === r)) setForm({ ...form, roles: [...form.roles, { role: r, skills: [] }] }); };
   const removeRole = (r: string) => setForm({ ...form, roles: form.roles.filter(x => x.role !== r) });
 
-  const handleSubmit = () => router.push('/projects');
+  const handleSubmit = async () => {
+    if (!canNext[3] || submitting) return;
+    setErrorMsg(null);
+    setSubmitting(true);
+
+    try {
+      const res = await createProjectAction({
+        name: form.name.trim(),
+        tagline: form.tagline.trim(),
+        category: form.category,
+        stack: form.stack,
+        roles: form.roles,
+        description: form.description.trim(),
+        githubUrl: form.github.trim() || undefined,
+        liveUrl: form.live.trim() || undefined,
+      });
+
+      if (res.error) {
+        setErrorMsg(res.error);
+      } else if (res.projectId) {
+        router.push(`/projects/${res.projectId}`);
+      } else {
+        router.push('/projects');
+      }
+    } catch {
+      setErrorMsg('An unexpected error occurred while launching project.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen" style={{ background: '#0D0D0F' }}>
@@ -56,6 +110,38 @@ export default function CreateProjectPage() {
       </header>
 
       <main className="max-w-xl mx-auto px-4 md:px-8 py-8">
+        {!checkingAuth && !user && (
+          <div
+            className="flex items-center justify-between p-4 rounded-xl mb-6 border font-body text-sm"
+            style={{ background: 'rgba(200,241,53,0.06)', borderColor: 'rgba(200,241,53,0.25)', color: '#E8E8F0' }}
+          >
+            <div className="flex items-center gap-2.5">
+              <LogIn size={18} style={{ color: '#C8F135' }} />
+              <div>
+                <span className="font-semibold">Sign in required</span>
+                <p className="text-xs" style={{ color: '#7A7A8C' }}>You must be logged in to launch a project.</p>
+              </div>
+            </div>
+            <Link
+              href="/auth"
+              className="font-display font-semibold text-xs px-3 py-1.5 rounded-lg flex-shrink-0"
+              style={{ background: '#C8F135', color: '#0D0D0F' }}
+            >
+              Sign In
+            </Link>
+          </div>
+        )}
+
+        {errorMsg && (
+          <div
+            className="flex items-start gap-2.5 p-3 rounded-xl mb-6 border font-body text-xs leading-relaxed"
+            style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.3)', color: '#F87171' }}
+          >
+            <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+            <div>{errorMsg}</div>
+          </div>
+        )}
+
         {/* Step indicator */}
         <div className="flex items-center gap-2 mb-8">
           {STEPS.map((s, i) => (
@@ -213,8 +299,8 @@ export default function CreateProjectPage() {
             {/* Summary preview */}
             <div className="rounded-xl border p-4" style={{ background: '#1C1C20', borderColor: '#2A2A30' }}>
               <p className="font-mono text-[10px] mb-3" style={{ color: '#7A7A8C' }}>PREVIEW</p>
-              <p className="font-display font-bold text-base mb-1" style={{ color: '#E8E8F0' }}>{form.name}</p>
-              <p className="font-body text-xs mb-3" style={{ color: '#7A7A8C' }}>{form.tagline}</p>
+              <p className="font-display font-bold text-base mb-1" style={{ color: '#E8E8F0' }}>{form.name || 'Untitled Project'}</p>
+              <p className="font-body text-xs mb-3" style={{ color: '#7A7A8C' }}>{form.tagline || 'Project tagline'}</p>
               <div className="flex flex-wrap gap-1.5 mb-2">
                 {form.stack.slice(0, 4).map(s => <Tag key={s} label={s} />)}
               </div>
@@ -257,16 +343,23 @@ export default function CreateProjectPage() {
           ) : (
             <button
               onClick={handleSubmit}
-              disabled={!canNext[step]}
+              disabled={!canNext[step] || submitting || !user}
               className="flex items-center gap-2 font-display font-semibold text-sm px-6 py-2.5 rounded-xl transition-all"
               style={{
-                background: canNext[step] ? '#C8F135' : '#1C1C20',
-                color: canNext[step] ? '#0D0D0F' : '#3A3A46',
+                background: canNext[step] && user ? '#C8F135' : '#1C1C20',
+                color: canNext[step] && user ? '#0D0D0F' : '#3A3A46',
+                opacity: submitting ? 0.7 : 1,
               }}
-              onMouseEnter={e => { if (canNext[step]) e.currentTarget.style.background = '#d4f547'; }}
-              onMouseLeave={e => { if (canNext[step]) e.currentTarget.style.background = '#C8F135'; }}
+              onMouseEnter={e => { if (canNext[step] && user && !submitting) e.currentTarget.style.background = '#d4f547'; }}
+              onMouseLeave={e => { if (canNext[step] && user && !submitting) e.currentTarget.style.background = '#C8F135'; }}
             >
-              Launch project 🚀
+              {submitting ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" /> Launching...
+                </>
+              ) : (
+                'Launch project 🚀'
+              )}
             </button>
           )}
         </div>

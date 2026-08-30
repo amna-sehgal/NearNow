@@ -1,16 +1,17 @@
 // src/app/(app)/projects/page.tsx
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { PROJECTS, PROJECT_CATEGORIES, ALL_STACKS, ALL_ROLES } from '@/lib/mock';
+import { PROJECT_CATEGORIES, ALL_STACKS, ALL_ROLES, ProjectFull } from '@/lib/mock';
+import { fetchProjects } from '@/lib/actions/projects';
 import Avatar from '@/components/ui/Avatar';
 import Tag from '@/components/ui/Tag';
-import { Plus, Search, SlidersHorizontal, Users, ChevronRight } from 'lucide-react';
+import { Plus, Search, SlidersHorizontal, Users, ChevronRight, Loader2 } from 'lucide-react';
 
-function ProjectCard({ project }: { project: typeof PROJECTS[0] }) {
+function ProjectCard({ project }: { project: ProjectFull }) {
   const openCount = project.openRoles.filter(r => !r.filled).length;
   const doneCount = project.tasks.filter(t => t.done).length;
-  const progress = Math.round((doneCount / project.tasks.length) * 100);
+  const progress = project.tasks.length > 0 ? Math.round((doneCount / project.tasks.length) * 100) : 0;
 
   return (
     <Link
@@ -61,8 +62,8 @@ function ProjectCard({ project }: { project: typeof PROJECTS[0] }) {
         {/* Members */}
         <div className="flex items-center">
           {project.members.slice(0, 3).map((m, i) => (
-            <div key={m.handle} style={{ marginLeft: i > 0 ? '-6px' : 0, zIndex: 3 - i }}>
-              <Avatar initials={m.avatar} size="sm" />
+            <div key={m.handle || i} style={{ marginLeft: i > 0 ? '-6px' : 0, zIndex: 3 - i }}>
+              <Avatar initials={m.avatar || 'SB'} size="sm" />
             </div>
           ))}
           {project.members.length > 3 && (
@@ -91,14 +92,30 @@ export default function ProjectsPage() {
   const [stackFilter, setStackFilter] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [projects, setProjects] = useState<ProjectFull[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filtered = PROJECTS.filter(p => {
-    const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase()) || p.tagline.toLowerCase().includes(search.toLowerCase()) || p.description.toLowerCase().includes(search.toLowerCase());
-    const matchCat = category === 'All' || p.category.includes(category);
-    const matchStack = !stackFilter || p.stack.includes(stackFilter);
-    const matchRole = !roleFilter || p.openRoles.some(r => r.role === roleFilter && !r.filled);
-    return matchSearch && matchCat && matchStack && matchRole;
-  });
+  useEffect(() => {
+    let isMounted = true;
+    async function loadProjects() {
+      setLoading(true);
+      try {
+        const data = await fetchProjects({
+          search,
+          category,
+          stack: stackFilter,
+          role: roleFilter,
+        });
+        if (isMounted) setProjects(data);
+      } catch (err) {
+        console.error('[ProjectsPage Load Error]:', err);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+    loadProjects();
+    return () => { isMounted = false; };
+  }, [search, category, stackFilter, roleFilter]);
 
   return (
     <div className="min-h-screen" style={{ background: '#0D0D0F' }}>
@@ -200,22 +217,27 @@ export default function ProjectsPage() {
       <main className="max-w-4xl mx-auto px-4 md:px-8 py-6">
         <div className="flex items-center justify-between mb-5">
           <span className="font-mono text-xs" style={{ color: '#7A7A8C' }}>
-            {filtered.length} project{filtered.length !== 1 ? 's' : ''}
+            {projects.length} project{projects.length !== 1 ? 's' : ''}
             {category !== 'All' && ` in ${category}`}
           </span>
         </div>
 
-        {filtered.length === 0 ? (
-          <div className="text-center py-20">
-            <p className="font-display text-lg" style={{ color: '#3A3A46' }}>No projects found.</p>
-            <p className="font-body text-sm mt-1 mb-6" style={{ color: '#3A3A46' }}>Try different filters or start your own.</p>
+        {loading ? (
+          <div className="flex flex-col items-center justify-center py-20 gap-3">
+            <Loader2 size={24} className="animate-spin" style={{ color: '#C8F135' }} />
+            <span className="font-mono text-xs" style={{ color: '#7A7A8C' }}>Fetching projects from database...</span>
+          </div>
+        ) : projects.length === 0 ? (
+          <div className="text-center py-20 border rounded-2xl p-8" style={{ background: '#141416', borderColor: '#2A2A30' }}>
+            <p className="font-display text-lg" style={{ color: '#E8E8F0' }}>No projects found.</p>
+            <p className="font-body text-sm mt-1 mb-6" style={{ color: '#7A7A8C' }}>Try different filters or start your own.</p>
             <Link href="/projects/create" className="font-display font-semibold text-sm px-5 py-2.5 rounded-xl" style={{ background: '#C8F135', color: '#0D0D0F' }}>
               Start a project
             </Link>
           </div>
         ) : (
           <div className="grid md:grid-cols-2 gap-4">
-            {filtered.map(p => <ProjectCard key={p.id} project={p} />)}
+            {projects.map(p => <ProjectCard key={p.id} project={p} />)}
           </div>
         )}
       </main>
