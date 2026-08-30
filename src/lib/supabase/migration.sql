@@ -125,6 +125,16 @@ begin
   end if;
 end $$;
 
+-- Seed canonical initial missions with deterministic UUIDs
+insert into public.missions (id, title, description, category, xp, difficulty, estimated_time, skills, deliverables)
+values
+  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Build a REST API with Auth', 'Implement JWT authentication and password hashing in Node.js/Express or FastAPI with protected endpoints and rate limiting.', 'Backend', 120, 'Intermediate', '2-3 hours', ARRAY['Node.js', 'JWT', 'Express', 'Security'], ARRAY['GitHub Repository link', 'Live API endpoint test via Postman/curl']),
+  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12', 'Deploy Fullstack App with Docker', 'Containerize a React frontend and Node.js backend using Dockerfile and docker-compose.yml. Deploy to server or cloud provider.', 'DevOps', 150, 'Intermediate', '3 hours', ARRAY['Docker', 'DevOps', 'CI/CD', 'Linux'], ARRAY['docker-compose.yml configuration', 'Live deployed URL']),
+  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13', 'Integrate Gemini LLM for AI Features', 'Build an interactive AI prompt generator or smart resume reviewer using Google Gemini API with streaming responses.', 'AI / ML', 180, 'Advanced', '3-4 hours', ARRAY['Gemini API', 'Python', 'Next.js', 'LLMs'], ARRAY['Working demo link', 'Public GitHub repo']),
+  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14', 'Design & Build Responsive Dark Dashboard', 'Build a glassmorphism dark-mode analytics dashboard in Next.js & Tailwind featuring responsive charts and micro-animations.', 'Frontend', 100, 'Beginner', '2 hours', ARRAY['React', 'Next.js', 'TailwindCSS', 'UI/UX'], ARRAY['Vercel deployment link', 'Figma or GitHub repo']),
+  ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a15', 'Fix an Open Source Issue & Merge PR', 'Find a good first issue on a popular open source repository, submit a PR, and get it merged by maintainers.', 'Open Source', 200, 'Advanced', '4-5 hours', ARRAY['Git', 'Open Source', 'Code Review', 'Testing'], ARRAY['Merged Pull Request URL'])
+on conflict (id) do nothing;
+
 -- 5. CREATE USER MISSIONS TABLE & POLICIES
 create table if not exists public.user_missions (
   id uuid default gen_random_uuid() primary key,
@@ -196,3 +206,13 @@ begin
     create policy "Authenticated users can apply for roles" on public.project_applications for insert with check (auth.uid() = applicant_id);
   end if;
 end $$;
+
+-- 8. ATOMIC USER XP INCREMENT FUNCTION
+create or replace function public.increment_user_xp(user_id_input uuid, xp_amount integer)
+returns void as $$
+begin
+  update public.profiles
+  set xp = coalesce(xp, 0) + xp_amount
+  where id = user_id_input;
+end;
+$$ language plpgsql security definer;

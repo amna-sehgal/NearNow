@@ -170,7 +170,7 @@ export default function MissionDetailPage({ params }: { params: Promise<{ id: st
           ) : (
             <div>
               <h2 className="font-display font-bold text-base mb-1" style={{ color: '#E8E8F0' }}>Submit Your Work</h2>
-              <p className="font-body text-xs mb-4" style={{ color: '#7A7A8C' }}>Paste your GitHub repository link or live demo URL to claim XP.</p>
+              <p className="font-body text-xs mb-4" style={{ color: '#7A7A8C' }}>Paste your GitHub repository link or live demo URL (Self-Reported URL submission) to claim XP.</p>
 
               <div className="flex flex-col gap-3">
                 <input

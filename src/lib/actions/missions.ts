@@ -19,7 +19,7 @@ export interface Mission {
 
 export const MISSIONS: Mission[] = [
   {
-    id: 'm-001',
+    id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
     title: 'Build a REST API with Auth',
     description: 'Implement JWT authentication and password hashing in Node.js/Express or FastAPI with protected endpoints and rate limiting.',
     category: 'Backend',
@@ -31,7 +31,7 @@ export const MISSIONS: Mission[] = [
     completedByCount: 42,
   },
   {
-    id: 'm-002',
+    id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a12',
     title: 'Deploy Fullstack App with Docker',
     description: 'Containerize a React frontend and Node.js backend using Dockerfile and docker-compose.yml. Deploy to server or cloud provider.',
     category: 'DevOps',
@@ -43,7 +43,7 @@ export const MISSIONS: Mission[] = [
     completedByCount: 28,
   },
   {
-    id: 'm-003',
+    id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a13',
     title: 'Integrate Gemini LLM for AI Features',
     description: 'Build an interactive AI prompt generator or smart resume reviewer using Google Gemini API with streaming responses.',
     category: 'AI / ML',
@@ -55,7 +55,7 @@ export const MISSIONS: Mission[] = [
     completedByCount: 35,
   },
   {
-    id: 'm-004',
+    id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a14',
     title: 'Design & Build Responsive Dark Dashboard',
     description: 'Build a glassmorphism dark-mode analytics dashboard in Next.js & Tailwind featuring responsive charts and micro-animations.',
     category: 'Frontend',
@@ -67,7 +67,7 @@ export const MISSIONS: Mission[] = [
     completedByCount: 56,
   },
   {
-    id: 'm-005',
+    id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a15',
     title: 'Fix an Open Source Issue & Merge PR',
     description: 'Find a good first issue on a popular open source repository, submit a PR, and get it merged by maintainers.',
     category: 'Open Source',
@@ -89,7 +89,7 @@ export async function fetchMissions(category?: string): Promise<Mission[]> {
       query = query.eq('category', category);
     }
 
-    const { data: rows } = await query;
+    const { data: rows, error } = await query;
     const { data: { user } } = await supabase.auth.getUser();
 
     let completedIds: string[] = [];
@@ -104,7 +104,7 @@ export async function fetchMissions(category?: string): Promise<Mission[]> {
       }
     }
 
-    if (!rows || rows.length === 0) {
+    if (error || !rows || rows.length === 0) {
       return MISSIONS.filter(m => !category || category === 'All' || m.category === category).map(m => ({
         ...m,
         isCompletedByCurrentUser: completedIds.includes(m.id),
@@ -142,7 +142,7 @@ export async function fetchMissionById(id: string): Promise<Mission | null> {
         .select('id')
         .eq('user_id', user.id)
         .eq('mission_id', id)
-        .single();
+        .maybeSingle();
       if (um) isCompleted = true;
     }
 
@@ -178,46 +178,92 @@ export async function completeMissionAction(payload: {
   try {
     const supabase = await createClient();
 
+    // 1. Strict Authentication Check
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       return { error: 'You must be signed in to complete a mission.' };
     }
 
+    // 2. Strict Submission URL Validation
+    const rawUrl = payload.submissionUrl?.trim() || '';
+    if (!rawUrl) {
+      return { error: 'A submission URL (e.g. GitHub link or live URL) is required to complete this mission.' };
+    }
+
+    let validUrl = rawUrl;
+    if (!/^https?:\/\//i.test(validUrl)) {
+      validUrl = `https://${validUrl}`;
+    }
+
+    try {
+      new URL(validUrl);
+    } catch {
+      return { error: 'Please enter a valid submission URL (e.g. https://github.com/username/repo).' };
+    }
+
+    // 3. Find Target Mission
     const mission = await fetchMissionById(payload.missionId);
     if (!mission) {
       return { error: 'Mission not found.' };
     }
 
-    // Record user mission completion in DB
-    await supabase.from('user_missions').upsert({
-      user_id: user.id,
-      mission_id: payload.missionId,
-      status: 'completed',
-      submission_url: payload.submissionUrl?.trim() || null,
-      completed_at: new Date().toISOString(),
+    // 4. Server-Side Duplicate Completion Check (HARDENED SECURITY)
+    const { data: existingCompletion } = await supabase
+      .from('user_missions')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('mission_id', payload.missionId)
+      .maybeSingle();
+
+    if (existingCompletion) {
+      return { error: 'You have already completed this mission.' };
+    }
+
+    // 5. Insert Completion Record into Database
+    const { error: insertError } = await supabase
+      .from('user_missions')
+      .insert({
+        user_id: user.id,
+        mission_id: payload.missionId,
+        status: 'completed',
+        submission_url: validUrl,
+        completed_at: new Date().toISOString(),
+      });
+
+    if (insertError) {
+      if (insertError.code === '23505') { // Unique constraint violation
+        return { error: 'You have already completed this mission.' };
+      }
+      console.error('[completeMissionAction Insert Error]:', insertError);
+      return { error: insertError.message };
+    }
+
+    // 6. Atomic XP Update via Database RPC (or atomic SQL fallback)
+    const { error: rpcError } = await supabase.rpc('increment_user_xp', {
+      user_id_input: user.id,
+      xp_amount: mission.xp,
     });
 
-    // Update user profile XP
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('xp')
-      .eq('id', user.id)
-      .single();
+    if (rpcError) {
+      // Fallback if RPC function is not installed in database instance
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('xp')
+        .eq('id', user.id)
+        .single();
+      const currentXp = profile?.xp || 0;
+      await supabase
+        .from('profiles')
+        .update({ xp: currentXp + mission.xp })
+        .eq('id', user.id);
+    }
 
-    const currentXp = profile?.xp || 0;
-    const newXp = currentXp + mission.xp;
-
-    await supabase
-      .from('profiles')
-      .update({ xp: newXp })
-      .eq('id', user.id);
-
-    // Create activity post in feed
+    // 7. Create Activity Feed Post with Self-Reported Label
     await supabase.from('activities').insert({
       user_id: user.id,
-      type: 'earned_xp',
+      type: 'completed_mission',
       content: `completed Skill Mission: ${mission.title}`,
-      meta: payload.submissionUrl ? `Submission: ${payload.submissionUrl}` : `Earned +${mission.xp} XP`,
+      meta: `Submission: ${validUrl} (Self-Reported URL)`,
       tags: mission.skills.slice(0, 4),
       xp: mission.xp,
     });
