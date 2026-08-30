@@ -13,7 +13,19 @@ export async function fetchProjects(options?: {
   try {
     const supabase = await createClient();
 
-    let query = supabase.from('projects').select('*').order('created_at', { ascending: false });
+    let query = supabase
+      .from('projects')
+      .select(`
+        *,
+        profiles:owner_id (
+          id,
+          name,
+          handle,
+          avatar,
+          college
+        )
+      `)
+      .order('created_at', { ascending: false });
 
     if (options?.category && options.category !== 'All') {
       query = query.ilike('category', `%${options.category}%`);
@@ -22,7 +34,7 @@ export async function fetchProjects(options?: {
     const { data, error } = await query;
 
     if (error || !data || data.length === 0) {
-      // Fallback to static mock projects if DB query returns empty or errors
+      // Fallback to static mock projects if DB query errors or yields no rows
       return PROJECTS.filter(p => {
         const matchSearch = !options?.search ||
           p.name.toLowerCase().includes(options.search.toLowerCase()) ||
@@ -35,25 +47,36 @@ export async function fetchProjects(options?: {
       });
     }
 
-    const mappedProjects: ProjectFull[] = data.map((row: any) => ({
-      id: row.id,
-      name: row.name,
-      tagline: row.tagline,
-      description: row.description,
-      stack: row.stack || [],
-      category: row.category,
-      status: row.status || 'building',
-      openRoles: row.open_roles || [],
-      members: row.members || [],
-      college: row.college || 'College',
-      githubUrl: row.github_url || undefined,
-      liveUrl: row.live_url || undefined,
-      tasks: row.tasks || [],
-      timestamp: 'Recently added',
-      owner: row.owner_id,
-      xpReward: row.xp_reward || 150,
-      applicants: row.applicants || 0,
-    }));
+    const mappedProjects: ProjectFull[] = data.map((row: any) => {
+      const ownerProfile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+      const ownerName = ownerProfile?.name || row.members?.[0]?.name || 'Builder';
+      const ownerHandle = ownerProfile?.handle || row.members?.[0]?.handle || 'builder';
+      const ownerAvatar = ownerProfile?.avatar || row.members?.[0]?.avatar || 'SB';
+
+      const members = row.members && row.members.length > 0 ? row.members : [
+        { handle: ownerHandle, name: ownerName, avatar: ownerAvatar, role: 'Founder / Owner' }
+      ];
+
+      return {
+        id: row.id,
+        name: row.name,
+        tagline: row.tagline,
+        description: row.description,
+        stack: row.stack || [],
+        category: row.category,
+        status: row.status || 'building',
+        openRoles: row.open_roles || [],
+        members,
+        college: ownerProfile?.college || row.college || 'College',
+        githubUrl: row.github_url || undefined,
+        liveUrl: row.live_url || undefined,
+        tasks: row.tasks || [],
+        timestamp: 'Recently added',
+        owner: ownerHandle,
+        xpReward: row.xp_reward || 150,
+        applicants: row.applicants || 0,
+      };
+    });
 
     if (options?.search) {
       const s = options.search.toLowerCase();
@@ -64,8 +87,17 @@ export async function fetchProjects(options?: {
       );
     }
 
+    if (options?.stack) {
+      return mappedProjects.filter(p => p.stack.includes(options.stack!));
+    }
+
+    if (options?.role) {
+      return mappedProjects.filter(p => p.openRoles.some(r => r.role === options.role && !r.filled));
+    }
+
     return mappedProjects;
-  } catch {
+  } catch (err) {
+    console.error('[fetchProjects Exception]:', err);
     return PROJECTS;
   }
 }
@@ -76,13 +108,31 @@ export async function fetchProjectById(id: string): Promise<ProjectFull | null> 
 
     const { data, error } = await supabase
       .from('projects')
-      .select('*')
+      .select(`
+        *,
+        profiles:owner_id (
+          id,
+          name,
+          handle,
+          avatar,
+          college
+        )
+      `)
       .eq('id', id)
       .single();
 
     if (error || !data) {
       return PROJECTS.find(p => p.id === id) || null;
     }
+
+    const ownerProfile = Array.isArray(data.profiles) ? data.profiles[0] : data.profiles;
+    const ownerName = ownerProfile?.name || data.members?.[0]?.name || 'Builder';
+    const ownerHandle = ownerProfile?.handle || data.members?.[0]?.handle || 'builder';
+    const ownerAvatar = ownerProfile?.avatar || data.members?.[0]?.avatar || 'SB';
+
+    const members = data.members && data.members.length > 0 ? data.members : [
+      { handle: ownerHandle, name: ownerName, avatar: ownerAvatar, role: 'Founder / Owner' }
+    ];
 
     return {
       id: data.id,
@@ -93,13 +143,13 @@ export async function fetchProjectById(id: string): Promise<ProjectFull | null> 
       category: data.category,
       status: data.status || 'building',
       openRoles: data.open_roles || [],
-      members: data.members || [],
-      college: data.college || 'College',
+      members,
+      college: ownerProfile?.college || data.college || 'College',
       githubUrl: data.github_url || undefined,
       liveUrl: data.live_url || undefined,
       tasks: data.tasks || [],
       timestamp: 'Recently added',
-      owner: data.owner_id,
+      owner: ownerHandle,
       xpReward: data.xp_reward || 150,
       applicants: data.applicants || 0,
     };
@@ -121,12 +171,30 @@ export async function createProjectAction(payload: {
   try {
     const supabase = await createClient();
 
+    // 1. Strict Authentication Check
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       return { error: 'You must be signed in to launch a project.' };
     }
 
-    // Get user profile
+    // 2. Strict Input Validation
+    if (!payload.name || payload.name.trim().length < 3) {
+      return { error: 'Project name must be at least 3 characters long.' };
+    }
+    if (!payload.tagline || payload.tagline.trim().length < 6) {
+      return { error: 'Project tagline must be at least 6 characters long.' };
+    }
+    if (!payload.category) {
+      return { error: 'Please select a project category.' };
+    }
+    if (!payload.stack || payload.stack.length === 0) {
+      return { error: 'Please add at least one technology stack tag.' };
+    }
+    if (!payload.description || payload.description.trim().length < 20) {
+      return { error: 'Project description must be at least 20 characters long.' };
+    }
+
+    // 3. Get Owner Profile
     const { data: profile } = await supabase
       .from('profiles')
       .select('*')
@@ -140,7 +208,7 @@ export async function createProjectAction(payload: {
 
     const openRolesFormatted = payload.roles.map(r => ({
       role: r.role,
-      skills: r.skills || payload.stack.slice(0, 3),
+      skills: r.skills && r.skills.length > 0 ? r.skills : payload.stack.slice(0, 3),
       filled: false,
     }));
 
@@ -160,6 +228,7 @@ export async function createProjectAction(payload: {
       { label: 'Team recruitment & setup', done: false },
     ];
 
+    // 4. Insert Project into Supabase (owner_id comes strictly from auth user session)
     const { data, error } = await supabase
       .from('projects')
       .insert({
@@ -183,16 +252,16 @@ export async function createProjectAction(payload: {
       .single();
 
     if (error) {
-      console.error('[createProjectAction Error]:', error);
+      console.error('[createProjectAction DB Error]:', error);
       return { error: error.message };
     }
 
-    // Post to activity feed automatically
+    // 5. Broadcast to Feed (user_id comes strictly from auth user session)
     await supabase.from('activities').insert({
       user_id: user.id,
       type: 'started_project',
-      content: `started a new project: ${payload.name}`,
-      meta: payload.tagline,
+      content: `started a new project: ${payload.name.trim()}`,
+      meta: payload.tagline.trim(),
       tags: payload.stack.slice(0, 4),
     });
 
@@ -212,12 +281,53 @@ export async function applyForProjectRoleAction(payload: {
   try {
     const supabase = await createClient();
 
+    // 1. Strict Session Check
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       return { error: 'You must be signed in to apply for project roles.' };
     }
 
-    // Fetch current project applicants
+    // 2. Input Validation
+    if (!payload.projectId) {
+      return { error: 'Invalid project ID.' };
+    }
+    if (!payload.role) {
+      return { error: 'Role specification required.' };
+    }
+    if (!payload.message || !payload.message.trim()) {
+      return { error: 'Please include a message with your application.' };
+    }
+
+    // 3. Prevent Duplicate Applications
+    const { data: existingApp } = await supabase
+      .from('project_applications')
+      .select('id')
+      .eq('project_id', payload.projectId)
+      .eq('applicant_id', user.id)
+      .eq('role', payload.role)
+      .maybeSingle();
+
+    if (existingApp) {
+      return { error: 'You have already applied for this role on this project.' };
+    }
+
+    // 4. Save Application to Supabase (applicant_id comes strictly from auth user session)
+    const { error: appError } = await supabase
+      .from('project_applications')
+      .insert({
+        project_id: payload.projectId,
+        applicant_id: user.id,
+        role: payload.role,
+        message: payload.message.trim(),
+        status: 'pending',
+      });
+
+    if (appError) {
+      console.error('[applyForProjectRoleAction DB Error]:', appError);
+      return { error: appError.message };
+    }
+
+    // 5. Update Applicants Count on Project
     const { data: project } = await supabase
       .from('projects')
       .select('applicants')
