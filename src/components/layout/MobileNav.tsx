@@ -1,19 +1,35 @@
 // src/components/layout/MobileNav.tsx
 'use client';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Activity, Layers, Zap, Bell, User } from 'lucide-react';
-
-const NAV = [
-  { href: '/feed',          icon: Activity, label: 'Feed'     },
-  { href: '/projects',      icon: Layers,   label: 'Projects' },
-  { href: '/missions',      icon: Zap,      label: 'Missions' },
-  { href: '/notifications', icon: Bell,     label: 'Alerts'   },
-  { href: '/profile/amna_s',icon: User,     label: 'Profile'  },
-];
+import { Activity, Layers, Zap, Compass, User } from 'lucide-react';
+import { getCurrentUser } from '@/lib/actions/auth';
 
 export default function MobileNav() {
   const pathname = usePathname();
+  const [profileHandle, setProfileHandle] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function checkAuth() {
+      const current = await getCurrentUser();
+      if (current?.profile?.handle) {
+        setProfileHandle(current.profile.handle);
+      }
+    }
+    checkAuth();
+  }, [pathname]);
+
+  const profileHref = profileHandle ? `/profile/${profileHandle}` : '/auth';
+
+  const NAV = [
+    { href: '/feed',          icon: Activity, label: 'Feed'        },
+    { href: '/projects',      icon: Layers,   label: 'Projects'    },
+    { href: '/missions',      icon: Zap,      label: 'Missions'    },
+    { href: '/opportunities', icon: Compass,  label: 'Opportunities'},
+    { href: profileHref,      icon: User,     label: 'Profile'     },
+  ];
+
   return (
     <nav
       className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t"
@@ -21,7 +37,7 @@ export default function MobileNav() {
     >
       <div className="flex items-center">
         {NAV.map(({ href, icon: Icon, label }) => {
-          const active = pathname === href || pathname.startsWith(href + '/');
+          const active = pathname === href || (href !== '/auth' && pathname.startsWith(href + '/'));
           return (
             <Link
               key={href}
@@ -30,7 +46,7 @@ export default function MobileNav() {
               style={{ color: active ? '#C8F135' : '#3A3A46' }}
             >
               <Icon size={18} />
-              <span className="font-mono text-[9px]">{label}</span>
+              <span className="font-mono text-[9px] truncate px-1">{label}</span>
             </Link>
           );
         })}
