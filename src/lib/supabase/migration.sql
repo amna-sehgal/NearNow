@@ -207,12 +207,22 @@ begin
   end if;
 end $$;
 
--- 8. ATOMIC USER XP INCREMENT FUNCTION
+-- 8. ATOMIC USER XP INCREMENT FUNCTION WITH STRICT AUTHORIZATION & SEARCH PATH
 create or replace function public.increment_user_xp(user_id_input uuid, xp_amount integer)
 returns void as $$
 begin
+  -- Enforce caller authorization: caller can only increment their own XP
+  if auth.uid() is null or auth.uid() != user_id_input then
+    raise exception 'Unauthorized: caller cannot increment XP for another user';
+  end if;
+
+  -- Enforce reasonable XP bounds (max 500 XP per single transaction call)
+  if xp_amount <= 0 or xp_amount > 500 then
+    raise exception 'Invalid XP amount';
+  end if;
+
   update public.profiles
   set xp = coalesce(xp, 0) + xp_amount
   where id = user_id_input;
 end;
-$$ language plpgsql security definer;
+$$ language plpgsql security definer set search_path = public;
