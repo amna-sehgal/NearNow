@@ -80,3 +80,27 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 ```bash
 npm run build
 ```
+
+---
+
+## Projects, Missions & Shared Auth Layout
+
+- **Shared Layout Session State (`AuthProvider`)**:
+  - `src/components/providers/AuthProvider.tsx` wraps the shared `(app)` layout. It receives the server-verified Supabase session on SSR and syncs auth state across the sidebar and mobile navigation without per-page refetches.
+  - Subscribes to real-time `onAuthStateChange` events for instant UI updates on sign-in, profile updates, and sign-out.
+  - Added OAuth callback handler at `src/app/auth/callback/route.ts` to process OAuth code exchange and profile initialization.
+
+- **Projects & Teammate Recruitment (`/projects`)**:
+  - Full backend integration for student projects with filtering by category, tech stack, and open roles.
+  - Server actions in `src/lib/actions/projects.ts` handle project creation, role listings, task progress tracking, and role applications.
+
+- **Skill Missions & Proof-of-Work (`/missions`)**:
+  - Server actions in `src/lib/actions/missions.ts` query available skill missions, track completion status per user, and award XP.
+  - Records completed mission submissions in `user_missions` with self-reported proof-of-work links and automatically posts completion updates to the activity feed.
+
+- **Opportunity OS (`/opportunities`)**:
+  - Backend actions in `src/lib/actions/opportunities.ts` fetch and filter hackathons, grants, bounties, internships, and fellowships.
+
+- **Database Migrations & Schema**:
+  - `src/lib/supabase/schema.sql` and `src/lib/supabase/migration.sql` contain the table definitions for `projects`, `missions`, `user_missions`, `opportunities`, and `project_applications`, along with RLS policies and the `increment_user_xp` RPC function.
+
