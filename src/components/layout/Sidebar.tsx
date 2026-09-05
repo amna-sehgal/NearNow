@@ -1,13 +1,11 @@
 // src/components/layout/Sidebar.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Activity, Layers, Zap, Compass, LogIn, LogOut, ChevronRight } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
-import { getCurrentUser } from '@/lib/actions/auth';
-import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/components/providers/AuthProvider';
 
 const NAV = [
   { href: '/feed',          icon: Activity, label: 'Feed'          },
@@ -18,78 +16,7 @@ const NAV = [
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function loadAuth() {
-      try {
-        const current = await getCurrentUser();
-        if (current?.profile) {
-          setUser({
-            id: current.id,
-            name: current.profile.name,
-            handle: current.profile.handle,
-            avatar: current.profile.avatar || 'SB',
-            xp: current.profile.xp ?? 0,
-            xpToNext: current.profile.xpToNext ?? 1000,
-            reputation: current.profile.reputation ?? 100,
-          });
-          setLoading(false);
-          return;
-        }
-
-        const supabase = createClient();
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-        if (authUser) {
-          const { data: dbProfile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', authUser.id)
-            .single();
-
-          if (dbProfile) {
-            setUser({
-              id: dbProfile.id,
-              name: dbProfile.name,
-              handle: dbProfile.handle,
-              avatar: dbProfile.avatar || 'SB',
-              xp: dbProfile.xp ?? 0,
-              xpToNext: dbProfile.xp_to_next ?? 1000,
-              reputation: dbProfile.reputation ?? 100,
-            });
-          } else {
-            const emailHandle = authUser.email?.split('@')[0] || 'builder';
-            const name = authUser.user_metadata?.name || 'Builder';
-            setUser({
-              id: authUser.id,
-              name,
-              handle: emailHandle,
-              avatar: name.slice(0, 2).toUpperCase(),
-              xp: 0,
-              xpToNext: 1000,
-              reputation: 100,
-            });
-          }
-        } else {
-          setUser(null);
-        }
-      } catch {
-        setUser(null);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    loadAuth();
-  }, [pathname]);
-
-  const handleSignOut = async () => {
-    const supabase = createClient();
-    await supabase.auth.signOut();
-    setUser(null);
-    window.location.href = '/';
-  };
+  const { user, loading, signOut } = useAuth();
 
   const xpPercent = user ? Math.min(((user.xp || 0) / (user.xpToNext || 1000)) * 100, 100) : 0;
 
@@ -182,7 +109,7 @@ export default function Sidebar() {
               </Link>
 
               <button
-                onClick={handleSignOut}
+                onClick={signOut}
                 className="flex items-center justify-center gap-1.5 h-8 w-full rounded-lg font-body text-xs transition-colors"
                 style={{ color: '#7A7A8C', background: '#141416', border: '1px solid #2A2A30' }}
                 onMouseEnter={e => { e.currentTarget.style.color = '#E8E8F0'; e.currentTarget.style.borderColor = '#3A3A44'; }}

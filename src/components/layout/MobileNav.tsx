@@ -1,26 +1,15 @@
 // src/components/layout/MobileNav.tsx
 'use client';
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Activity, Layers, Zap, Compass, User } from 'lucide-react';
-import { getCurrentUser } from '@/lib/actions/auth';
+import { useAuth } from '@/components/providers/AuthProvider';
 
 export default function MobileNav() {
   const pathname = usePathname();
-  const [profileHandle, setProfileHandle] = useState<string | null>(null);
+  const { user } = useAuth();
 
-  useEffect(() => {
-    async function checkAuth() {
-      const current = await getCurrentUser();
-      if (current?.profile?.handle) {
-        setProfileHandle(current.profile.handle);
-      }
-    }
-    checkAuth();
-  }, [pathname]);
-
-  const profileHref = profileHandle ? `/profile/${profileHandle}` : '/auth';
+  const profileHref = user?.handle ? `/profile/${user.handle}` : '/auth';
 
   const NAV = [
     { href: '/feed',          icon: Activity, label: 'Feed'        },

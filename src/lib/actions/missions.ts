@@ -17,7 +17,7 @@ export interface Mission {
   isCompletedByCurrentUser?: boolean;
 }
 
-export const MISSIONS: Mission[] = [
+const MISSIONS: Mission[] = [
   {
     id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
     title: 'Build a REST API with Auth',

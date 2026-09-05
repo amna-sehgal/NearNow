@@ -16,7 +16,7 @@ export interface Opportunity {
   postedAt?: string;
 }
 
-export const OPPORTUNITIES: Opportunity[] = [
+const OPPORTUNITIES: Opportunity[] = [
   {
     id: 'opp-001',
     title: 'HackDelhi 2026 — National Student Hackathon',
