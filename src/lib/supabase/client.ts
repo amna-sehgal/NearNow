@@ -1,11 +1,13 @@
 import { createBrowserClient } from '@supabase/ssr';
 
+let client: ReturnType<typeof createBrowserClient> | null = null;
+
 export function createClient() {
-  const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  const rawKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  if (client) return client;
+  
+  const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim().replace(/\/+$/, '');
+  const supabaseAnonKey = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '').trim();
 
-  const supabaseUrl = rawUrl.trim().replace(/^["']|["']$/g, '').replace(/\/+$/, '');
-  const supabaseAnonKey = rawKey.trim().replace(/^["']|["']$/g, '');
-
-  return createBrowserClient(supabaseUrl, supabaseAnonKey);
+  client = createBrowserClient(supabaseUrl, supabaseAnonKey);
+  return client;
 }

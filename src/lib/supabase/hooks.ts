@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { createClient } from './client';
-import type { User } from '@supabase/supabase-js';
+import type { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
 
 export interface Profile {
   id: string;
@@ -20,7 +20,6 @@ export interface Profile {
   github: string;
   linkedin: string;
   portfolio: string;
-  created_at: string;
 }
 
 export function useUser() {
@@ -29,14 +28,18 @@ export function useUser() {
 
   useEffect(() => {
     const supabase = createClient();
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user);
+
+    supabase.auth.getSession().then((result: { data: { session: Session | null } }) => {
+      setUser(result.data.session?.user ?? null);
       setLoading(false);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+
+    const { data } = supabase.auth.onAuthStateChange((_event: AuthChangeEvent, session: Session | null) => {
       setUser(session?.user ?? null);
+      setLoading(false);
     });
-    return () => subscription.unsubscribe();
+
+    return () => data.subscription.unsubscribe();
   }, []);
 
   return { user, loading };
@@ -50,14 +53,15 @@ export function useProfile() {
   useEffect(() => {
     if (userLoading) return;
     if (!user) { setLoading(false); return; }
+
     const supabase = createClient();
     supabase
       .from('profiles')
       .select('*')
       .eq('id', user.id)
       .single()
-      .then(({ data }) => {
-        setProfile(data);
+      .then((result: { data: Profile | null }) => {
+        setProfile(result.data);
         setLoading(false);
       });
   }, [user, userLoading]);
