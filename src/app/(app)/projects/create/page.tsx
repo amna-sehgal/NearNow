@@ -37,54 +37,67 @@ export default function CreateProjectPage() {
   const addRole = (r: string) => { if (!form.roles.find(x => x.role === r)) setForm({ ...form, roles: [...form.roles, { role: r, skills: [] }] }); };
   const removeRole = (r: string) => setForm({ ...form, roles: form.roles.filter(x => x.role !== r) });
 
-  const handleSubmit = async () => {
-    if (!user || !profile) return;
-    setSubmitting(true);
-    setError('');
-    const supabase = createClient();
+const handleSubmit = async () => {
+  setSubmitting(true);
+  setError('');
+  const supabase = createClient();
 
-    const openRoles = form.roles.map(r => ({ role: r.role, skills: r.skills, filled: false }));
-    const members = [{ handle: profile.handle, name: profile.name, avatar: profile.avatar, role: 'Founder' }];
+  // Get user + profile directly
+  const { data: { user: currentUser } } = await supabase.auth.getUser();
+  if (!currentUser) { setError('Not logged in. Please refresh.'); setSubmitting(false); return; }
 
-    const { data: projectData, error: projectError } = await supabase
-      .from('projects')
-      .insert({
-        owner_id: user.id,
-        name: form.name.trim(),
-        tagline: form.tagline.trim(),
-        description: form.description.trim(),
-        category: form.category,
-        stack: form.stack,
-        open_roles: openRoles,
-        members,
-        tasks: [],
-        college: profile.college,
-        github_url: form.github.trim() || null,
-        live_url: form.live.trim() || null,
-        xp_reward: 150,
-        status: 'building',
-      })
-      .select()
-      .single();
+  const { data: currentProfile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', currentUser.id)
+    .single();
 
-    if (projectError) { setError(projectError.message); setSubmitting(false); return; }
+  if (!currentProfile) { setError('Profile not found. Please complete your profile first.'); setSubmitting(false); return; }
 
-    // Post activity
-    await supabase.from('activities').insert({
-      user_id: user.id,
-      type: 'started_project',
-      content: `started a new project: ${form.name}`,
-      meta: form.tagline,
-      tags: form.stack.slice(0, 3),
-      xp: 50,
-    });
+  const openRoles = form.roles.map(r => ({ role: r.role, skills: r.skills, filled: false }));
+  const members = [{
+    handle: currentProfile.handle,
+    name: currentProfile.name,
+    avatar: currentProfile.avatar || currentProfile.name?.slice(0,2).toUpperCase() || 'NN',
+    role: 'Founder'
+  }];
 
-    // Award XP
-    await supabase.rpc('increment_user_xp', { user_id_input: user.id, xp_amount: 50 });
+  const { data: projectData, error: projectError } = await supabase
+    .from('projects')
+    .insert({
+      owner_id: currentUser.id,
+      name: form.name.trim(),
+      tagline: form.tagline.trim(),
+      description: form.description.trim(),
+      category: form.category,
+      stack: form.stack,
+      open_roles: openRoles,
+      members,
+      tasks: [],
+      college: currentProfile.college || '',
+      github_url: form.github.trim() || null,
+      live_url: form.live.trim() || null,
+      xp_reward: 150,
+      status: 'building',
+    })
+    .select()
+    .single();
 
-    router.push(`/projects/${projectData.id}`);
-  };
+  if (projectError) { setError(projectError.message); setSubmitting(false); return; }
 
+  await supabase.from('activities').insert({
+    user_id: currentUser.id,
+    type: 'started_project',
+    content: `started a new project: ${form.name}`,
+    meta: form.tagline,
+    tags: form.stack.slice(0, 3),
+    xp: 50,
+  });
+
+  await supabase.rpc('increment_user_xp', { user_id_input: currentUser.id, xp_amount: 50 });
+
+  router.push(`/projects/${projectData.id}`);
+};
   return (
     <div className="min-h-screen" style={{ background: '#0D0D0F' }}>
       <header className="sticky top-0 z-20 border-b px-4 md:px-8 h-14 flex items-center gap-4"

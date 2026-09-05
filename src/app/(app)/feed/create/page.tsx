@@ -31,34 +31,35 @@ export default function CreatePost() {
   const addTag = (t: string) => { const c = t.trim(); if (c && !tags.includes(c) && tags.length < 5) { setTags([...tags, c]); setTagInput(''); } };
   const removeTag = (t: string) => setTags(tags.filter(x => x !== t));
 
-  const handleSubmit = async () => {
-    if (!selectedType || !content.trim() || !user) return;
-    setSubmitting(true);
-    setError('');
-    const supabase = createClient();
+const handleSubmit = async () => {
+  setSubmitting(true);
+  setError('');
+  const supabase = createClient();
 
-    const postType = POST_TYPES.find(t => t.key === selectedType);
-    const xpEarned = postType?.xp || 0;
+  // Get user directly — don't rely on hook timing
+  const { data: { user: currentUser } } = await supabase.auth.getUser();
+  if (!currentUser) { setError('Not logged in. Please refresh.'); setSubmitting(false); return; }
 
-    const { error: activityError } = await supabase.from('activities').insert({
-      user_id: user.id,
-      type: selectedType,
-      content: content.trim(),
-      meta: meta.trim() || null,
-      tags,
-      xp: xpEarned,
-    });
+  const postType = POST_TYPES.find(t => t.key === selectedType);
+  const xpEarned = postType?.xp || 0;
 
-    if (activityError) { setError(activityError.message); setSubmitting(false); return; }
+  const { error: activityError } = await supabase.from('activities').insert({
+    user_id: currentUser.id,
+    type: selectedType,
+    content: content.trim(),
+    meta: meta.trim() || null,
+    tags,
+    xp: xpEarned,
+  });
 
-    // Increment XP
-    if (xpEarned > 0) {
-      await supabase.rpc('increment_user_xp', { user_id_input: user.id, xp_amount: xpEarned });
-    }
+  if (activityError) { setError(activityError.message); setSubmitting(false); return; }
 
-    router.push('/feed');
-  };
+  if (xpEarned > 0) {
+    await supabase.rpc('increment_user_xp', { user_id_input: currentUser.id, xp_amount: xpEarned });
+  }
 
+  router.push('/feed');
+};
   return (
     <div className="min-h-screen" style={{ background: '#0D0D0F' }}>
       <header className="sticky top-0 z-40 border-b px-4 md:px-6 h-14 flex items-center gap-4"

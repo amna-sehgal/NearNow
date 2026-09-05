@@ -1,22 +1,35 @@
 'use client';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Activity, Layers, Zap, Bell, Search, ChevronRight, LogOut } from 'lucide-react';
+import { Activity, Layers, Zap, Search, ChevronRight, LogOut, User } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
-import { useProfile } from '@/lib/supabase/hooks';
 import { createClient } from '@/lib/supabase/client';
+import { useEffect, useState } from 'react';
 
 const NAV = [
-  { href: '/feed',          icon: Activity, label: 'Feed'          },
-  { href: '/projects',      icon: Layers,   label: 'Projects'      },
-  { href: '/missions',      icon: Zap,      label: 'Missions'      },
-  { href: '/search',        icon: Search,   label: 'Search'        },
+  { href: '/feed',      icon: Activity, label: 'Feed'     },
+  { href: '/projects',  icon: Layers,   label: 'Projects' },
+  { href: '/missions',  icon: Zap,      label: 'Missions' },
+  { href: '/search',    icon: Search,   label: 'Search'   },
 ];
 
 export default function Sidebar({ userId }: { userId: string }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { profile } = useProfile();
+  const [profile, setProfile] = useState<any>(null);
+
+  useEffect(() => {
+    const load = async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single();
+      setProfile(data);
+    };
+    if (userId) load();
+  }, [userId]);
 
   const handleSignOut = async () => {
     const supabase = createClient();
@@ -24,9 +37,12 @@ export default function Sidebar({ userId }: { userId: string }) {
     router.push('/');
   };
 
+  const xpPercent = profile ? Math.min((profile.xp / profile.xp_to_next) * 100, 100) : 0;
+
   return (
     <aside className="hidden md:flex flex-col fixed left-0 top-0 h-screen w-60 border-r z-30"
       style={{ background: '#0D0D0F', borderColor: '#2A2A30' }}>
+
       {/* Wordmark */}
       <div className="px-5 h-14 flex items-center border-b" style={{ borderColor: '#2A2A30' }}>
         <Link href="/feed" className="flex items-center gap-2">
@@ -44,7 +60,11 @@ export default function Sidebar({ userId }: { userId: string }) {
           return (
             <Link key={href} href={href}
               className="flex items-center gap-3 h-10 px-3 rounded-lg font-body text-sm transition-all duration-150"
-              style={{ background: active ? 'rgba(200,241,53,0.08)' : 'transparent', color: active ? '#C8F135' : '#7A7A8C', borderLeft: active ? '2px solid #C8F135' : '2px solid transparent' }}
+              style={{
+                background: active ? 'rgba(200,241,53,0.08)' : 'transparent',
+                color: active ? '#C8F135' : '#7A7A8C',
+                borderLeft: active ? '2px solid #C8F135' : '2px solid transparent',
+              }}
               onMouseEnter={e => { if (!active) { e.currentTarget.style.background = '#141416'; e.currentTarget.style.color = '#E8E8F0'; }}}
               onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#7A7A8C'; }}}
             >
@@ -64,20 +84,27 @@ export default function Sidebar({ userId }: { userId: string }) {
           <Layers size={16} /> New Project
         </Link>
 
-        <button onClick={handleSignOut}
-          className="flex items-center gap-3 h-10 px-3 rounded-lg font-body text-sm transition-all duration-150 w-full text-left mt-auto"
-          style={{ color: '#7A7A8C' }}
-          onMouseEnter={e => { e.currentTarget.style.background = '#141416'; e.currentTarget.style.color = '#ff6b6b'; }}
-          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#7A7A8C'; }}
+        {/* Profile link — always visible */}
+        <Link
+          href={profile ? `/profile/${profile.handle}` : '/profile/me'}
+          className="flex items-center gap-3 h-10 px-3 rounded-lg font-body text-sm transition-all duration-150"
+          style={{
+            background: pathname.startsWith('/profile') ? 'rgba(200,241,53,0.08)' : 'transparent',
+            color: pathname.startsWith('/profile') ? '#C8F135' : '#7A7A8C',
+            borderLeft: pathname.startsWith('/profile') ? '2px solid #C8F135' : '2px solid transparent',
+          }}
+          onMouseEnter={e => { if (!pathname.startsWith('/profile')) { e.currentTarget.style.background = '#141416'; e.currentTarget.style.color = '#E8E8F0'; }}}
+          onMouseLeave={e => { if (!pathname.startsWith('/profile')) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#7A7A8C'; }}}
         >
-          <LogOut size={16} /> Sign out
-        </button>
+          <User size={16} /> Profile
+        </Link>
       </nav>
 
-      {/* User card */}
+      {/* User card at bottom */}
       <div className="px-3 pb-4 border-t pt-4" style={{ borderColor: '#2A2A30' }}>
-        {profile && (
+        {profile ? (
           <>
+            {/* XP bar */}
             <div className="mb-3 px-2">
               <div className="flex justify-between mb-1">
                 <span className="font-mono text-[10px]" style={{ color: '#7A7A8C' }}>XP</span>
@@ -85,24 +112,48 @@ export default function Sidebar({ userId }: { userId: string }) {
               </div>
               <div className="h-1 rounded-full overflow-hidden" style={{ background: '#1C1C20' }}>
                 <div className="h-full rounded-full transition-all duration-700"
-                  style={{ width: `${Math.min((profile.xp / profile.xp_to_next) * 100, 100)}%`, background: 'linear-gradient(to right, #9BB82A, #C8F135)' }} />
+                  style={{ width: `${xpPercent}%`, background: 'linear-gradient(to right, #9BB82A, #C8F135)' }} />
               </div>
             </div>
+
+            {/* Profile card */}
             <Link href={`/profile/${profile.handle}`}
-              className="flex items-center gap-3 p-2 rounded-xl transition-all duration-150 group"
+              className="flex items-center gap-3 p-2 rounded-xl transition-all duration-150 group mb-2"
               style={{ background: '#141416', border: '1px solid #2A2A30' }}
               onMouseEnter={e => { e.currentTarget.style.borderColor = '#3A3A44'; }}
               onMouseLeave={e => { e.currentTarget.style.borderColor = '#2A2A30'; }}
             >
-              <Avatar initials={profile.avatar || profile.name?.slice(0, 2).toUpperCase() || 'NN'} size="sm" glow />
+              <Avatar
+                initials={profile.avatar || profile.name?.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0,2) || 'NN'}
+                size="sm" glow
+              />
               <div className="flex-1 min-w-0">
                 <div className="font-display font-medium text-xs truncate" style={{ color: '#E8E8F0' }}>{profile.name}</div>
-                <div className="font-mono text-[10px]" style={{ color: '#7A7A8C' }}>Rep {profile.reputation}</div>
+                <div className="font-mono text-[10px]" style={{ color: '#7A7A8C' }}>Rep {profile.reputation} · @{profile.handle}</div>
               </div>
               <ChevronRight size={12} style={{ color: '#3A3A46' }} className="group-hover:translate-x-0.5 transition-transform" />
             </Link>
           </>
+        ) : (
+          /* Skeleton while loading */
+          <div className="flex items-center gap-3 p-2 rounded-xl mb-2" style={{ background: '#141416', border: '1px solid #2A2A30' }}>
+            <div className="w-8 h-8 rounded-full animate-pulse" style={{ background: '#1C1C20' }} />
+            <div className="flex-1">
+              <div className="h-2.5 rounded animate-pulse mb-1.5" style={{ background: '#1C1C20', width: '70%' }} />
+              <div className="h-2 rounded animate-pulse" style={{ background: '#1C1C20', width: '50%' }} />
+            </div>
+          </div>
         )}
+
+        {/* Sign out */}
+        <button onClick={handleSignOut}
+          className="flex items-center gap-3 h-9 px-3 rounded-lg font-body text-sm transition-all w-full text-left"
+          style={{ color: '#7A7A8C' }}
+          onMouseEnter={e => { e.currentTarget.style.background = '#141416'; e.currentTarget.style.color = '#ff6b6b'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#7A7A8C'; }}
+        >
+          <LogOut size={16} /> Sign out
+        </button>
       </div>
     </aside>
   );
