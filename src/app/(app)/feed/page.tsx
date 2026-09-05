@@ -1,175 +1,152 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { createClient } from '@/lib/supabase/client';
 import ActivityCard from '@/components/ui/ActivityCard';
-import { Activity, ACTIVITIES } from '@/lib/data';
-import { fetchActivities } from '@/lib/actions/activities';
-import { Plus, Search, Zap, Trophy, Code2, Rocket, GitMerge, Loader2 } from 'lucide-react';
+import { Plus, Search, Zap, Trophy, Code2, Rocket, GitMerge } from 'lucide-react';
 
 const FILTERS = [
-  { key: 'all', label: 'All' },
-  { key: 'earned_xp', label: 'Missions', icon: Zap },
-  { key: 'won_hackathon', label: 'Wins', icon: Trophy },
-  { key: 'started_project', label: 'Projects', icon: Code2 },
-  { key: 'deployed', label: 'Deployed', icon: Rocket },
-  { key: 'contributed_oss', label: 'OSS', icon: GitMerge },
+  { key: 'all',              label: 'All'      },
+  { key: 'earned_xp',       label: 'Missions', icon: Zap      },
+  { key: 'won_hackathon',   label: 'Wins',     icon: Trophy   },
+  { key: 'started_project', label: 'Projects', icon: Code2    },
+  { key: 'deployed',        label: 'Deployed', icon: Rocket   },
+  { key: 'contributed_oss', label: 'OSS',      icon: GitMerge },
 ];
 
 export default function FeedPage() {
+  const [activities, setActivities] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [activities, setActivities] = useState<Activity[]>([]);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let isMounted = true;
-    async function loadData() {
-      setLoading(true);
-      try {
-        const data = await fetchActivities({ filter: activeFilter });
-        if (isMounted) {
-          setActivities(data);
-        }
-      } catch {
-        if (isMounted) {
-          setActivities(ACTIVITIES);
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    }
-    loadData();
-    return () => { isMounted = false; };
+    const fetchActivities = async () => {
+      const supabase = createClient();
+      let query = supabase
+        .from('activities')
+        .select(`*, profiles(name, handle, avatar, college)`)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (activeFilter !== 'all') query = query.eq('type', activeFilter);
+
+      const { data } = await query;
+      setActivities(data || []);
+      setLoading(false);
+    };
+
+    fetchActivities();
+
+    // Realtime subscription
+    const supabase = createClient();
+    const channel = supabase
+      .channel('feed')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activities' }, payload => {
+        setActivities(prev => [payload.new as any, ...prev]);
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
   }, [activeFilter]);
 
   const filtered = activities.filter(a => {
-    const matchesFilter = activeFilter === 'all' || a.type === activeFilter;
-    const matchesSearch = !searchQuery || 
-      a.user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.user.college.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      a.tags?.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()));
-    return matchesFilter && matchesSearch;
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      a.profiles?.name?.toLowerCase().includes(q) ||
+      a.content?.toLowerCase().includes(q) ||
+      a.tags?.some((t: string) => t.toLowerCase().includes(q))
+    );
+  });
+
+  // Map DB row → ActivityCard shape
+  const toCard = (a: any) => ({
+    id: a.id,
+    type: a.type,
+    user: {
+      name: a.profiles?.name || 'Builder',
+      handle: a.profiles?.handle || 'user',
+      avatar: a.profiles?.avatar || 'NN',
+      college: a.profiles?.college || '',
+    },
+    content: a.content,
+    meta: a.meta,
+    tags: a.tags || [],
+    xp: a.xp,
+    timestamp: new Date(a.created_at).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }),
+    isFresh: Date.now() - new Date(a.created_at).getTime() < 1000 * 60 * 30,
   });
 
   return (
     <div className="min-h-screen" style={{ background: '#0D0D0F' }}>
-      {/* Top bar */}
-      <header
-        className="sticky top-0 z-40 border-b px-4 md:px-6"
-        style={{ background: 'rgba(13,13,15,0.92)', backdropFilter: 'blur(12px)', borderColor: '#2A2A30' }}
-      >
+      <header className="sticky top-0 z-40 border-b px-4 md:px-6"
+        style={{ background: 'rgba(13,13,15,0.92)', backdropFilter: 'blur(12px)', borderColor: '#2A2A30' }}>
         <div className="max-w-2xl mx-auto h-14 flex items-center gap-3">
-          <Link href="/" className="flex items-center gap-1.5 mr-2 flex-shrink-0">
-            <span className="pulse-dot w-1.5 h-1.5 rounded-full" style={{ background: '#C8F135', display: 'inline-block' }} />
-            <span className="font-display font-semibold text-sm" style={{ color: '#E8E8F0' }}>
-              near<span style={{ color: '#C8F135' }}>now</span>
-            </span>
-          </Link>
-
-          {/* Search */}
           <div className="flex-1 relative">
-            <Search
-              size={13}
-              className="absolute left-3 top-1/2 -translate-y-1/2"
-              style={{ color: '#3A3A46' }}
-            />
-            <input
-              type="text"
-              placeholder="Search builders, projects, skills..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full h-9 pl-8 pr-4 rounded-lg font-body text-sm outline-none transition-all duration-200"
-              style={{
-                background: '#141416',
-                border: '1px solid #2A2A30',
-                color: '#E8E8F0',
-              }}
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: '#3A3A46' }} />
+            <input type="text" placeholder="Search builders, projects, skills..."
+              value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+              className="w-full h-9 pl-8 pr-4 rounded-lg font-body text-sm outline-none transition-all"
+              style={{ background: '#141416', border: '1px solid #2A2A30', color: '#E8E8F0' }}
               onFocus={e => { e.target.style.borderColor = '#C8F135'; e.target.style.boxShadow = '0 0 0 3px rgba(200,241,53,0.08)'; }}
               onBlur={e => { e.target.style.borderColor = '#2A2A30'; e.target.style.boxShadow = 'none'; }}
             />
           </div>
-
-          {/* Create post */}
-          <Link
-            href="/feed/create"
-            className="flex items-center gap-1.5 h-9 px-3 rounded-lg font-display font-medium text-sm flex-shrink-0 transition-all duration-200"
+          <Link href="/feed/create"
+            className="flex items-center gap-1.5 h-9 px-3 rounded-lg font-display font-medium text-sm flex-shrink-0 transition-all"
             style={{ background: '#C8F135', color: '#0D0D0F' }}
             onMouseEnter={e => { e.currentTarget.style.background = '#d4f547'; }}
             onMouseLeave={e => { e.currentTarget.style.background = '#C8F135'; }}
           >
-            <Plus size={14} />
-            <span className="hidden sm:inline">Post</span>
+            <Plus size={14} /><span className="hidden sm:inline">Post</span>
           </Link>
         </div>
-
-        {/* Filters */}
-        <div className="max-w-2xl mx-auto pb-3 flex items-center gap-2 overflow-x-auto scrollbar-none">
+        <div className="max-w-2xl mx-auto pb-3 flex items-center gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
           {FILTERS.map(f => {
             const Icon = f.icon;
             const isActive = activeFilter === f.key;
             return (
-              <button
-                key={f.key}
-                onClick={() => setActiveFilter(f.key)}
-                className="flex items-center gap-1.5 h-7 px-3 rounded-full font-mono text-xs whitespace-nowrap transition-all duration-200 flex-shrink-0"
-                style={{
-                  background: isActive ? 'rgba(200,241,53,0.12)' : '#141416',
-                  border: `1px solid ${isActive ? 'rgba(200,241,53,0.4)' : '#2A2A30'}`,
-                  color: isActive ? '#C8F135' : '#7A7A8C',
-                }}
+              <button key={f.key} onClick={() => setActiveFilter(f.key)}
+                className="flex items-center gap-1.5 h-7 px-3 rounded-full font-mono text-xs whitespace-nowrap transition-all flex-shrink-0"
+                style={{ background: isActive ? 'rgba(200,241,53,0.12)' : '#141416', border: `1px solid ${isActive ? 'rgba(200,241,53,0.4)' : '#2A2A30'}`, color: isActive ? '#C8F135' : '#7A7A8C' }}
               >
-                {Icon && <Icon size={10} />}
-                {f.label}
+                {Icon && <Icon size={10} />}{f.label}
               </button>
             );
           })}
         </div>
       </header>
 
-      {/* Feed */}
       <main className="max-w-2xl mx-auto px-4 md:px-6 py-6">
-        {/* Live indicator */}
         <div className="flex items-center gap-2 mb-5">
           <span className="pulse-dot w-1.5 h-1.5 rounded-full" style={{ background: '#C8F135', display: 'inline-block' }} />
           <span className="font-mono text-xs" style={{ color: '#7A7A8C' }}>
-            {filtered.length} activities · updating live
+            {loading ? 'Loading...' : `${filtered.length} activities · live`}
           </span>
         </div>
 
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-3">
-            <Loader2 size={24} className="animate-spin" style={{ color: '#C8F135' }} />
-            <p className="font-mono text-xs" style={{ color: '#7A7A8C' }}>Fetching live activity feed...</p>
+          <div className="flex flex-col gap-3">
+            {[1,2,3].map(i => (
+              <div key={i} className="h-24 rounded-xl border animate-pulse" style={{ background: '#141416', borderColor: '#2A2A30' }} />
+            ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="text-center py-20 border rounded-2xl p-8" style={{ background: '#141416', borderColor: '#2A2A30' }}>
-            <p className="font-display font-medium text-lg" style={{ color: '#E8E8F0' }}>Nothing nearby yet.</p>
-            <p className="font-body text-sm mt-1" style={{ color: '#7A7A8C' }}>Try a different filter or search, or share your first build!</p>
-            <Link
-              href="/feed/create"
-              className="inline-flex items-center gap-1.5 mt-5 h-9 px-4 rounded-xl font-display font-semibold text-xs transition-all"
-              style={{ background: '#C8F135', color: '#0D0D0F' }}
-            >
-              <Plus size={14} /> Create Activity Post
-            </Link>
+          <div className="text-center py-20">
+            <p className="font-display text-lg" style={{ color: '#3A3A46' }}>
+              {activities.length === 0 ? 'No activity yet.' : 'Nothing matches.'}
+            </p>
+            <p className="font-body text-sm mt-1" style={{ color: '#3A3A46' }}>
+              {activities.length === 0 ? 'Be the first to post something.' : 'Try a different filter.'}
+            </p>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
-            {filtered.map((activity, i) => (
-              <div
-                key={activity.id}
-                className="transition-all duration-500"
-                style={{
-                  animation: `float-up 0.5s ease forwards`,
-                  animationDelay: `${i * 50}ms`,
-                  opacity: 0,
-                }}
-              >
-                <Link href={`/feed/${activity.id}`} className="block">
-                  <ActivityCard activity={activity} />
+            {filtered.map((a, i) => (
+              <div key={a.id} style={{ animation: `float-up 0.5s ease forwards`, animationDelay: `${i * 40}ms`, opacity: 0 }}>
+                <Link href={`/feed/${a.id}`}>
+                  <ActivityCard activity={toCard(a)} />
                 </Link>
               </div>
             ))}
