@@ -38,16 +38,7 @@ export default function FeedPage() {
 
     fetchActivities();
 
-    // Realtime subscription
-    const supabase = createClient();
-    const channel = supabase
-      .channel('feed')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activities' }, payload => {
-        setActivities(prev => [payload.new as any, ...prev]);
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
+    return () => {};
   }, [activeFilter]);
 
   const filtered = activities.filter(a => {
