@@ -47,7 +47,6 @@ function AuthForm() {
           handle,
           avatar: form.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2),
           college: form.college,
-          email: form.email,
         });
         if (profileError) { setError(profileError.message); setLoading(false); return; }
 
