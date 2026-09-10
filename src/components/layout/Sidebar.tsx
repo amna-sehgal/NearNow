@@ -1,18 +1,18 @@
 'use client';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Activity, Layers, Zap, Search, ChevronRight, LogOut, User } from 'lucide-react';
+import { Activity, Layers, Zap, Search, ChevronRight, LogOut, User, Users, Bell } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import { createClient } from '@/lib/supabase/client';
 import { useEffect, useState } from 'react';
 
 const NAV = [
-  { href: '/feed',      icon: Activity, label: 'Feed'     },
-  { href: '/projects',  icon: Layers,   label: 'Projects' },
-  { href: '/missions',  icon: Zap,      label: 'Missions' },
-  { href: '/search',    icon: Search,   label: 'Search'   },
+  { href: '/feed', icon: Activity, label: 'Feed' },
+  { href: '/projects', icon: Layers, label: 'Projects' },
+  { href: '/match', icon: Users, label: 'Match' },
+  { href: '/missions', icon: Zap, label: 'Missions' },
+  { href: '/search', icon: Search, label: 'Search' },
 ];
-
 export default function Sidebar({ userId }: { userId: string }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -38,6 +38,34 @@ export default function Sidebar({ userId }: { userId: string }) {
   };
 
   const xpPercent = profile ? Math.min((profile.xp / profile.xp_to_next) * 100, 100) : 0;
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (!userId) return;
+    const loadUnread = async () => {
+      const supabase = createClient();
+      const { count } = await supabase
+        .from('notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('read', false);
+      setUnreadCount(count || 0);
+    };
+    loadUnread();
+
+    const supabase = createClient();
+    const channel = supabase
+      .channel('notif-count')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'notifications',
+        filter: `user_id=eq.${userId}`,
+      }, () => loadUnread())
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [userId]);
 
   return (
     <aside className="hidden md:flex flex-col fixed left-0 top-0 h-screen w-60 border-r z-30"
@@ -65,8 +93,8 @@ export default function Sidebar({ userId }: { userId: string }) {
                 color: active ? '#C8F135' : '#7A7A8C',
                 borderLeft: active ? '2px solid #C8F135' : '2px solid transparent',
               }}
-              onMouseEnter={e => { if (!active) { e.currentTarget.style.background = '#141416'; e.currentTarget.style.color = '#E8E8F0'; }}}
-              onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#7A7A8C'; }}}
+              onMouseEnter={e => { if (!active) { e.currentTarget.style.background = '#141416'; e.currentTarget.style.color = '#E8E8F0'; } }}
+              onMouseLeave={e => { if (!active) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#7A7A8C'; } }}
             >
               <Icon size={16} />{label}
             </Link>
@@ -84,6 +112,27 @@ export default function Sidebar({ userId }: { userId: string }) {
           <Layers size={16} /> New Project
         </Link>
 
+        <Link
+          href="/notifications"
+          className="flex items-center gap-3 h-10 px-3 rounded-lg font-body text-sm transition-all duration-150"
+          style={{
+            background: pathname === '/notifications' ? 'rgba(200,241,53,0.08)' : 'transparent',
+            color: pathname === '/notifications' ? '#C8F135' : '#7A7A8C',
+            borderLeft: pathname === '/notifications' ? '2px solid #C8F135' : '2px solid transparent',
+          }}
+          onMouseEnter={e => { if (pathname !== '/notifications') { e.currentTarget.style.background = '#141416'; e.currentTarget.style.color = '#E8E8F0'; } }}
+          onMouseLeave={e => { if (pathname !== '/notifications') { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#7A7A8C'; } }}
+        >
+          <Bell size={16} />
+          Notifications
+          {unreadCount > 0 && (
+            <span className="ml-auto font-mono text-[9px] px-1.5 py-0.5 rounded-full"
+              style={{ background: 'rgba(200,241,53,0.15)', color: '#C8F135' }}>
+              {unreadCount}
+            </span>
+          )}
+        </Link>
+
         {/* Profile link — always visible */}
         <Link
           href={profile ? `/profile/${profile.handle}` : '/profile/me'}
@@ -93,8 +142,8 @@ export default function Sidebar({ userId }: { userId: string }) {
             color: pathname.startsWith('/profile') ? '#C8F135' : '#7A7A8C',
             borderLeft: pathname.startsWith('/profile') ? '2px solid #C8F135' : '2px solid transparent',
           }}
-          onMouseEnter={e => { if (!pathname.startsWith('/profile')) { e.currentTarget.style.background = '#141416'; e.currentTarget.style.color = '#E8E8F0'; }}}
-          onMouseLeave={e => { if (!pathname.startsWith('/profile')) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#7A7A8C'; }}}
+          onMouseEnter={e => { if (!pathname.startsWith('/profile')) { e.currentTarget.style.background = '#141416'; e.currentTarget.style.color = '#E8E8F0'; } }}
+          onMouseLeave={e => { if (!pathname.startsWith('/profile')) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#7A7A8C'; } }}
         >
           <User size={16} /> Profile
         </Link>
@@ -124,7 +173,7 @@ export default function Sidebar({ userId }: { userId: string }) {
               onMouseLeave={e => { e.currentTarget.style.borderColor = '#2A2A30'; }}
             >
               <Avatar
-                initials={profile.avatar || profile.name?.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0,2) || 'NN'}
+                initials={profile.avatar || profile.name?.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2) || 'NN'}
                 size="sm" glow
               />
               <div className="flex-1 min-w-0">
