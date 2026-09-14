@@ -1,6 +1,6 @@
 'use server';
 
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { PROJECTS, ProjectFull } from '@/lib/mock';
 import { revalidatePath } from 'next/cache';
 
@@ -47,6 +47,7 @@ export async function fetchProjects(options?: {
       });
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mappedProjects: ProjectFull[] = data.map((row: any) => {
       const ownerProfile = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
       const ownerName = ownerProfile?.name || row.members?.[0]?.name || 'Builder';
@@ -201,9 +202,6 @@ export async function createProjectAction(payload: {
       .eq('id', user.id)
       .single();
 
-    const ownerName = profile?.name || user.user_metadata?.name || 'Builder';
-    const ownerHandle = profile?.handle || user.email?.split('@')[0] || 'builder';
-    const ownerAvatar = profile?.avatar || 'SB';
     const ownerCollege = profile?.college || 'College';
 
     const openRolesFormatted = payload.roles.map(r => ({
@@ -212,15 +210,6 @@ export async function createProjectAction(payload: {
       filled: false,
     }));
 
-    const membersFormatted = [
-      {
-        handle: ownerHandle,
-        name: ownerName,
-        avatar: ownerAvatar,
-        role: 'Founder / Owner',
-      },
-    ];
-
     const initialTasks = [
       { label: 'Project specification & scope', done: true },
       { label: 'Core architecture design', done: false },
@@ -228,48 +217,45 @@ export async function createProjectAction(payload: {
       { label: 'Team recruitment & setup', done: false },
     ];
 
-    // 4. Insert Project into Supabase (owner_id comes strictly from auth user session)
-    const { data, error } = await supabase
-      .from('projects')
-      .insert({
-        owner_id: user.id,
-        name: payload.name.trim(),
-        tagline: payload.tagline.trim(),
-        description: payload.description.trim(),
-        category: payload.category,
-        status: 'building',
-        stack: payload.stack,
-        open_roles: openRolesFormatted,
-        members: membersFormatted,
-        tasks: initialTasks,
-        college: ownerCollege,
-        github_url: payload.githubUrl?.trim() || null,
-        live_url: payload.liveUrl?.trim() || null,
-        xp_reward: 200,
-        applicants: 0,
-      })
-      .select('id')
-      .single();
+    // 4. Call Atomic Domain RPC via Admin Client (handles project creation, race-safe advisory locked XP cap, and xp_logs atomically)
+    const adminSupabase = await createAdminClient();
+    const { data: rpcRes, error: rpcErr } = await adminSupabase.rpc('create_project_with_xp', {
+      user_id_input: user.id,
+      name_input: payload.name.trim(),
+      tagline_input: payload.tagline.trim(),
+      description_input: payload.description.trim(),
+      category_input: payload.category,
+      stack_input: payload.stack,
+      open_roles_input: openRolesFormatted,
+      tasks_input: initialTasks,
+      college_input: ownerCollege,
+      github_url_input: payload.githubUrl?.trim() || null,
+      live_url_input: payload.liveUrl?.trim() || null,
+    });
 
-    if (error) {
-      console.error('[createProjectAction DB Error]:', error);
-      return { error: error.message };
+    if (rpcErr) {
+      console.error('[createProjectAction RPC Error]:', rpcErr);
+      return { error: rpcErr.message };
     }
 
-    // 5. Broadcast to Feed (user_id comes strictly from auth user session)
+    const newProjectId = rpcRes?.project_id;
+
+    // 5. Broadcast to Feed
     await supabase.from('activities').insert({
       user_id: user.id,
       type: 'started_project',
       content: `started a new project: ${payload.name.trim()}`,
       meta: payload.tagline.trim(),
       tags: payload.stack.slice(0, 4),
+      xp: rpcRes?.xp_awarded ?? 150,
     });
 
     revalidatePath('/projects');
     revalidatePath('/feed');
-    return { success: true, projectId: data.id };
-  } catch (err: any) {
-    return { error: err.message || 'Failed to launch project.' };
+    return { success: true, projectId: newProjectId };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Failed to launch project.';
+    return { error: errorMsg };
   }
 }
 
@@ -343,7 +329,7 @@ export async function applyForProjectRoleAction(payload: {
 
     revalidatePath(`/projects/${payload.projectId}`);
     return { success: true };
-  } catch (err: any) {
-    return { error: err.message || 'Failed to submit role application.' };
+  } catch (err: unknown) {
+    return { error: (err as Error).message || 'Failed to submit role application.' };
   }
 }

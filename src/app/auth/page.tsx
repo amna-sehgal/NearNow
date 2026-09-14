@@ -122,9 +122,26 @@ function AuthForm() {
 
           {/* GitHub OAuth */}
           <button
+            type="button"
             onClick={async () => {
-              const supabase = createClient();
-              await supabase.auth.signInWithOAuth({ provider: 'github', options: { redirectTo: `${window.location.origin}/feed` } });
+              try {
+                setError('');
+                const supabase = createClient();
+                const { data, error } = await supabase.auth.signInWithOAuth({
+                  provider: 'github',
+                  options: { redirectTo: `${window.location.origin}/feed` },
+                });
+                if (error) {
+                  setError(error.message);
+                  console.error('[GitHub OAuth Error]:', error);
+                } else if (data?.url) {
+                  window.location.href = data.url;
+                }
+              } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : 'Failed to initiate GitHub login.';
+                setError(msg);
+                console.error('[GitHub OAuth Exception]:', err);
+              }
             }}
             className="w-full h-10 flex items-center justify-center gap-2.5 rounded-xl font-body text-sm mb-5 transition-all duration-200"
             style={{ background: '#1C1C20', border: '1px solid #2A2A30', color: '#E8E8F0' }}

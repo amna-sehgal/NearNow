@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Activity, Layers, Users, Bell, User } from 'lucide-react';
+import { Activity, Layers, Users, Bell, User, MapPin, MessageSquare } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
@@ -33,11 +33,13 @@ export default function MobileNav() {
   }, []);
 
   const NAV = [
-    { href: '/feed',                                  icon: Activity, label: 'Feed'    },
-    { href: '/projects',                              icon: Layers,   label: 'Projects'},
-    { href: '/match',                                 icon: Users,    label: 'Match'   },
-    { href: '/notifications',                         icon: Bell,     label: 'Alerts', badge: unread },
-    { href: handle ? `/profile/${handle}` : '/feed',  icon: User,     label: 'Profile' },
+    { href: '/feed',                                  icon: Activity,      label: 'Feed'        },
+    { href: '/projects',                              icon: Layers,        label: 'Projects'    },
+    { href: '/campus',                                icon: MapPin,        label: 'Campus'      },
+    { href: '/communities',                           icon: MessageSquare, label: 'Communities' },
+    { href: '/match',                                 icon: Users,         label: 'Match'       },
+    { href: '/notifications',                         icon: Bell,          label: 'Alerts', badge: unread },
+    { href: handle ? `/profile/${handle}` : '/feed',  icon: User,          label: 'Profile'     },
   ];
 
   return (
