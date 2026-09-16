@@ -1,6 +1,18 @@
 // src/lib/mock.ts
 import { Activity, ACTIVITIES } from './data';
 
+export const COLLEGES = [
+  'All Campuses',
+  'IGDTUW',
+  'NSUT',
+  'DTU',
+  'IIT Delhi',
+  'IIIT Delhi',
+  'Jamia Millia Islamia',
+  'BITS Pilani',
+  'NIT Delhi',
+];
+
 export interface UserProfile {
   handle: string;
   name: string;

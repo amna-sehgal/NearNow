@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Activity, Layers, Zap, Search, ChevronRight, LogOut, User, Users, Bell } from 'lucide-react';
+import { Activity, Layers, Zap, Search, ChevronRight, LogOut, User, Users, Bell, MapPin, MessageSquare } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import { createClient } from '@/lib/supabase/client';
 import { useEffect, useState } from 'react';
@@ -9,6 +9,8 @@ import { useEffect, useState } from 'react';
 const NAV = [
   { href: '/feed', icon: Activity, label: 'Feed' },
   { href: '/projects', icon: Layers, label: 'Projects' },
+  { href: '/campus', icon: MapPin, label: 'Campus Map' },
+  { href: '/communities', icon: MessageSquare, label: 'Communities' },
   { href: '/match', icon: Users, label: 'Match' },
   { href: '/missions', icon: Zap, label: 'Missions' },
   { href: '/search', icon: Search, label: 'Search' },
@@ -16,6 +18,7 @@ const NAV = [
 export default function Sidebar({ userId }: { userId: string }) {
   const pathname = usePathname();
   const router = useRouter();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [profile, setProfile] = useState<any>(null);
 
   useEffect(() => {

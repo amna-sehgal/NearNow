@@ -3,10 +3,11 @@ import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useProfile } from '@/lib/supabase/hooks';
+import { fetchUserBadges, fetchXpHistory, BadgeItem, XpLogItem } from '@/lib/actions/reputation';
 import Avatar from '@/components/ui/Avatar';
 import Tag from '@/components/ui/Tag';
 import ActivityCard from '@/components/ui/ActivityCard';
-import { Globe, MapPin, GraduationCap, Edit3, Star, ExternalLink } from 'lucide-react';
+import { Globe, MapPin, GraduationCap, Edit3, Star, ExternalLink, Award, History, X, Zap } from 'lucide-react';
 
 function GithubIcon({ size = 12 }: { size?: number }) {
   return (
@@ -35,10 +36,16 @@ function StatPill({ value, label }: { value: number; label: string }) {
 
 export default function ProfilePage({ params }: { params: Promise<{ handle: string }> }) {
   const { handle } = use(params);
-  const { profile: myProfile, user } = useProfile();
+  const { profile: myProfile } = useProfile();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [profile, setProfile] = useState<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [projects, setProjects] = useState<any[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [activities, setActivities] = useState<any[]>([]);
+  const [badges, setBadges] = useState<BadgeItem[]>([]);
+  const [xpLogs, setXpLogs] = useState<XpLogItem[]>([]);
+  const [showXpModal, setShowXpModal] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
 
   const isMe = myProfile?.handle === handle;
@@ -56,13 +63,19 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
       if (!profileData) { setLoading(false); return; }
       setProfile(profileData);
 
+      const [bData, xData] = await Promise.all([
+        fetchUserBadges(handle),
+        fetchXpHistory(profileData.id),
+      ]);
+      setBadges(bData);
+      setXpLogs(xData);
+
       const { data: projectData } = await supabase
         .from('projects')
         .select('*')
         .contains('members', JSON.stringify([{ handle }]))
         .order('created_at', { ascending: false });
 
-      // Also fetch owned projects
       const { data: ownedProjects } = await supabase
         .from('projects')
         .select('*')
@@ -101,14 +114,15 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
     </div>
   );
 
-  const xpPercent = Math.min((profile.xp / profile.xp_to_next) * 100, 100);
+  const xpPercent = Math.min(((profile?.xp || 0) / (profile?.xp_to_next || 100)) * 100, 100);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const toCard = (a: any) => ({
     id: a.id, type: a.type,
     user: { name: profile.name, handle: profile.handle, avatar: profile.avatar || 'NN', college: profile.college || '' },
     content: a.content, meta: a.meta, tags: a.tags || [], xp: a.xp,
     timestamp: new Date(a.created_at).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }),
-    isFresh: Date.now() - new Date(a.created_at).getTime() < 1000 * 60 * 30,
+    isFresh: false,
   });
 
   return (
@@ -155,10 +169,19 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
 
           {profile.bio && <p className="font-body text-sm leading-relaxed mb-5" style={{ color: '#E8E8F0' }}>{profile.bio}</p>}
 
-          {/* XP bar */}
+          {/* XP bar with History trigger */}
           <div className="mb-5">
-            <div className="flex justify-between mb-1.5">
-              <span className="font-mono text-xs" style={{ color: '#7A7A8C' }}>XP Progress</span>
+            <div className="flex justify-between items-center mb-1.5">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs" style={{ color: '#7A7A8C' }}>XP Progress</span>
+                <button
+                  onClick={() => setShowXpModal(true)}
+                  className="flex items-center gap-1 font-mono text-[10px] px-2 py-0.5 rounded-full border transition-all"
+                  style={{ background: '#1C1C20', borderColor: '#2A2A30', color: '#C8F135' }}
+                >
+                  <History size={10} /> XP History
+                </button>
+              </div>
               <span className="font-mono text-xs" style={{ color: '#C8F135' }}>{profile.xp} / {profile.xp_to_next}</span>
             </div>
             <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#1C1C20' }}>
@@ -207,6 +230,35 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
                 onMouseLeave={e => { e.currentTarget.style.background = '#C8F135'; }}
               >Connect</button>
             )}
+          </div>
+        </div>
+
+        {/* Dynamic Reputation Badges Section */}
+        <div className="rounded-2xl border p-5" style={{ background: '#141416', borderColor: '#2A2A30' }}>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-mono text-xs flex items-center gap-1.5" style={{ color: '#7A7A8C' }}>
+              <Award size={14} style={{ color: '#C8F135' }} /> REPUTATION BADGES
+            </h2>
+            <span className="font-mono text-[10px]" style={{ color: '#C8F135' }}>{badges.length} Unlocked</span>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {badges.map(b => (
+              <div
+                key={b.label}
+                className="flex items-center gap-3 p-3 rounded-xl border"
+                style={{ background: '#1C1C20', borderColor: '#2A2A30' }}
+              >
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg border flex-shrink-0"
+                  style={{ background: 'rgba(200,241,53,0.08)', borderColor: 'rgba(200,241,53,0.2)' }}>
+                  {b.icon}
+                </div>
+                <div className="min-w-0">
+                  <div className="font-display font-medium text-xs truncate" style={{ color: '#E8E8F0' }}>{b.label}</div>
+                  <div className="font-body text-[10px] truncate" style={{ color: '#7A7A8C' }}>{b.description}</div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -279,6 +331,42 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
           </div>
         )}
       </main>
+
+      {/* XP History Modal */}
+      {showXpModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)' }}>
+          <div className="w-full max-w-md rounded-2xl border p-6 flex flex-col gap-4 relative" style={{ background: '#141416', borderColor: '#2A2A30' }}>
+            <button onClick={() => setShowXpModal(false)} className="absolute right-4 top-4" style={{ color: '#7A7A8C' }}>
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center gap-2">
+              <Zap size={18} style={{ color: '#C8F135' }} />
+              <h3 className="font-display font-bold text-lg" style={{ color: '#E8E8F0' }}>XP History Log</h3>
+            </div>
+
+            <div className="flex flex-col gap-3 max-h-80 overflow-y-auto pr-1">
+              {xpLogs.length === 0 ? (
+                <p className="font-body text-xs text-center py-6" style={{ color: '#7A7A8C' }}>No XP history recorded yet.</p>
+              ) : (
+                xpLogs.map(log => (
+                  <div key={log.id} className="p-3 rounded-xl border flex items-center justify-between gap-3"
+                    style={{ background: '#1C1C20', borderColor: '#2A2A30' }}>
+                    <div>
+                      <div className="font-body text-xs" style={{ color: '#E8E8F0' }}>{log.reason}</div>
+                      <div className="font-mono text-[10px] mt-0.5" style={{ color: '#7A7A8C' }}>{log.createdAt}</div>
+                    </div>
+                    <span className="font-mono font-bold text-xs px-2.5 py-1 rounded-full"
+                      style={{ background: 'rgba(200,241,53,0.12)', color: '#C8F135' }}>
+                      +{log.amount} XP
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
