@@ -1,21 +1,12 @@
-// src/app/(app)/profile/[handle]/page.tsx
 'use client';
-import { use, useState, useEffect } from 'react';
+import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
-import { fetchProfileByHandle } from '@/lib/actions/profile';
-import { fetchActivities } from '@/lib/actions/activities';
-import { fetchProjects } from '@/lib/actions/projects';
-import { getCurrentUser } from '@/lib/actions/auth';
-import { UserProfile, ProjectFull } from '@/lib/mock';
-import { Activity } from '@/lib/data';
+import { createClient } from '@/lib/supabase/client';
+import { useProfile } from '@/lib/supabase/hooks';
 import Avatar from '@/components/ui/Avatar';
 import Tag from '@/components/ui/Tag';
 import ActivityCard from '@/components/ui/ActivityCard';
-import {
-  Globe, MapPin, GraduationCap,
-  Edit3, Star, ExternalLink, Loader2
-} from 'lucide-react';
+import { Globe, MapPin, GraduationCap, Edit3, Star, ExternalLink } from 'lucide-react';
 
 function GithubIcon({ size = 12 }: { size?: number }) {
   return (
@@ -44,88 +35,89 @@ function StatPill({ value, label }: { value: number; label: string }) {
 
 export default function ProfilePage({ params }: { params: Promise<{ handle: string }> }) {
   const { handle } = use(params);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [isMe, setIsMe] = useState(false);
+  const { profile: myProfile, user } = useProfile();
+  const [profile, setProfile] = useState<any>(null);
+  const [projects, setProjects] = useState<any[]>([]);
+  const [activities, setActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [userProjects, setUserProjects] = useState<ProjectFull[]>([]);
-  const [userActivity, setUserActivity] = useState<Activity[]>([]);
+
+  const isMe = myProfile?.handle === handle;
 
   useEffect(() => {
-    let isMounted = true;
-    async function loadData() {
-      setLoading(true);
-      try {
-        const [profRes, currentUser, allActivities, allProjects] = await Promise.all([
-          fetchProfileByHandle(handle),
-          getCurrentUser(),
-          fetchActivities(),
-          fetchProjects(),
-        ]);
+    const fetch = async () => {
+      const supabase = createClient();
 
-        if (!isMounted) return;
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('handle', handle)
+        .single();
 
-        if (!profRes.profile) {
-          setLoading(false);
-          return;
-        }
+      if (!profileData) { setLoading(false); return; }
+      setProfile(profileData);
 
-        const p = profRes.profile;
-        setProfile(p);
+      const { data: projectData } = await supabase
+        .from('projects')
+        .select('*')
+        .contains('members', JSON.stringify([{ handle }]))
+        .order('created_at', { ascending: false });
 
-        // Dynamic Auth Check — NOT hardcoded handle
-        const currentlyLoggedIsMe = !!(
-          currentUser &&
-          (currentUser.profile?.handle === p.handle || currentUser.profile?.handle === handle)
-        );
-        setIsMe(currentlyLoggedIsMe);
+      // Also fetch owned projects
+      const { data: ownedProjects } = await supabase
+        .from('projects')
+        .select('*')
+        .eq('owner_id', profileData.id)
+        .order('created_at', { ascending: false });
 
-        // Filter user projects and activities
-        const filteredProjects = allProjects.filter(prj =>
-          prj.members.some(m => m.handle === handle) || prj.owner === p.handle
-        );
-        const filteredActivities = allActivities.filter(act =>
-          act.user.handle === handle
-        );
+      const allProjects = [...(ownedProjects || []), ...(projectData || [])];
+      const unique = allProjects.filter((p, i, a) => a.findIndex(x => x.id === p.id) === i);
+      setProjects(unique);
 
-        setUserProjects(filteredProjects);
-        setUserActivity(filteredActivities);
-      } catch (err) {
-        console.error('[ProfilePage Load Error]:', err);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    }
+      const { data: activityData } = await supabase
+        .from('activities')
+        .select('*')
+        .eq('user_id', profileData.id)
+        .order('created_at', { ascending: false })
+        .limit(10);
 
-    loadData();
-    return () => { isMounted = false; };
+      setActivities(activityData || []);
+      setLoading(false);
+    };
+    fetch();
   }, [handle]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center gap-3" style={{ background: '#0D0D0F' }}>
-        <Loader2 size={24} className="animate-spin" style={{ color: '#C8F135' }} />
-        <span className="font-mono text-xs" style={{ color: '#7A7A8C' }}>Loading profile...</span>
+  if (loading) return (
+    <div className="min-h-screen flex items-center justify-center" style={{ background: '#0D0D0F' }}>
+      <div className="font-mono text-sm" style={{ color: '#7A7A8C' }}>Loading profile...</div>
+    </div>
+  );
+
+  if (!profile) return (
+    <div className="min-h-screen flex items-center justify-center" style={{ background: '#0D0D0F' }}>
+      <div className="text-center">
+        <p className="font-display text-lg" style={{ color: '#3A3A46' }}>Profile not found.</p>
+        <Link href="/feed" className="font-mono text-xs mt-2 block" style={{ color: '#7A7A8C' }}>← Back to feed</Link>
       </div>
-    );
-  }
+    </div>
+  );
 
-  if (!profile) {
-    notFound();
-  }
+  const xpPercent = Math.min((profile.xp / profile.xp_to_next) * 100, 100);
 
-  const xpPercent = Math.min(((profile.xp || 0) / (profile.xpToNext || 1000)) * 100, 100);
+  const toCard = (a: any) => ({
+    id: a.id, type: a.type,
+    user: { name: profile.name, handle: profile.handle, avatar: profile.avatar || 'NN', college: profile.college || '' },
+    content: a.content, meta: a.meta, tags: a.tags || [], xp: a.xp,
+    timestamp: new Date(a.created_at).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }),
+    isFresh: Date.now() - new Date(a.created_at).getTime() < 1000 * 60 * 30,
+  });
 
   return (
     <div className="min-h-screen" style={{ background: '#0D0D0F' }}>
-      {/* Header bar */}
-      <header
-        className="sticky top-0 z-20 border-b px-4 md:px-8 h-14 flex items-center justify-between"
-        style={{ background: 'rgba(13,13,15,0.92)', backdropFilter: 'blur(12px)', borderColor: '#2A2A30' }}
-      >
+      <header className="sticky top-0 z-20 border-b px-4 md:px-8 h-14 flex items-center justify-between"
+        style={{ background: 'rgba(13,13,15,0.92)', backdropFilter: 'blur(12px)', borderColor: '#2A2A30' }}>
         <span className="font-mono text-xs" style={{ color: '#7A7A8C' }}>@{profile.handle}</span>
         {isMe && (
-          <Link
-            href="/profile/edit"
+          <Link href="/profile/edit"
             className="flex items-center gap-2 h-8 px-3 rounded-lg font-body text-xs transition-all"
             style={{ background: '#141416', border: '1px solid #2A2A30', color: '#7A7A8C' }}
             onMouseEnter={e => { e.currentTarget.style.borderColor = '#C8F135'; e.currentTarget.style.color = '#C8F135'; }}
@@ -138,32 +130,22 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
 
       <main className="max-w-3xl mx-auto px-4 md:px-8 py-8 flex flex-col gap-6">
 
-        {/* ── IDENTITY CARD ── */}
+        {/* Identity card */}
         <div className="rounded-2xl border p-6" style={{ background: '#141416', borderColor: '#2A2A30' }}>
           <div className="flex items-start gap-4 mb-5">
-            <Avatar initials={profile.avatar} size="lg" glow />
+            <Avatar initials={profile.avatar || profile.name?.slice(0,2).toUpperCase() || 'NN'} size="lg" glow />
             <div className="flex-1">
               <h1 className="font-display font-bold text-xl" style={{ color: '#E8E8F0' }}>{profile.name}</h1>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
                 <span className="font-mono text-xs" style={{ color: '#C8F135' }}>@{profile.handle}</span>
-                <span style={{ color: '#2A2A30' }}>·</span>
-                <span className="flex items-center gap-1 font-body text-xs" style={{ color: '#7A7A8C' }}>
-                  <GraduationCap size={11} /> {profile.college}
-                </span>
-                <span style={{ color: '#2A2A30' }}>·</span>
-                <span className="flex items-center gap-1 font-body text-xs" style={{ color: '#7A7A8C' }}>
-                  <MapPin size={11} /> {profile.location}
-                </span>
+                {profile.college && <><span style={{ color: '#2A2A30' }}>·</span><span className="flex items-center gap-1 font-body text-xs" style={{ color: '#7A7A8C' }}><GraduationCap size={11} />{profile.college}</span></>}
+                {profile.location && <><span style={{ color: '#2A2A30' }}>·</span><span className="flex items-center gap-1 font-body text-xs" style={{ color: '#7A7A8C' }}><MapPin size={11} />{profile.location}</span></>}
               </div>
-              <p className="font-body text-xs mt-1" style={{ color: '#7A7A8C' }}>{profile.year}</p>
+              {profile.year && <p className="font-body text-xs mt-1" style={{ color: '#7A7A8C' }}>{profile.year}</p>}
             </div>
-
-            {/* Reputation badge */}
             <div className="flex-shrink-0 text-center">
-              <div
-                className="w-16 h-16 rounded-2xl flex flex-col items-center justify-center border"
-                style={{ background: 'rgba(200,241,53,0.06)', borderColor: 'rgba(200,241,53,0.2)' }}
-              >
+              <div className="w-16 h-16 rounded-2xl flex flex-col items-center justify-center border"
+                style={{ background: 'rgba(200,241,53,0.06)', borderColor: 'rgba(200,241,53,0.2)' }}>
                 <Star size={14} style={{ color: '#C8F135' }} />
                 <span className="font-display font-bold text-lg leading-tight" style={{ color: '#C8F135' }}>{profile.reputation}</span>
               </div>
@@ -171,150 +153,106 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
             </div>
           </div>
 
-          {/* Bio */}
-          {profile.bio && (
-            <p className="font-body text-sm leading-relaxed mb-5" style={{ color: '#E8E8F0' }}>{profile.bio}</p>
-          )}
+          {profile.bio && <p className="font-body text-sm leading-relaxed mb-5" style={{ color: '#E8E8F0' }}>{profile.bio}</p>}
 
           {/* XP bar */}
           <div className="mb-5">
             <div className="flex justify-between mb-1.5">
               <span className="font-mono text-xs" style={{ color: '#7A7A8C' }}>XP Progress</span>
-              <span className="font-mono text-xs" style={{ color: '#C8F135' }}>{profile.xp} / {profile.xpToNext}</span>
+              <span className="font-mono text-xs" style={{ color: '#C8F135' }}>{profile.xp} / {profile.xp_to_next}</span>
             </div>
             <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#1C1C20' }}>
-              <div
-                className="h-full rounded-full"
-                style={{ width: `${xpPercent}%`, background: 'linear-gradient(to right, #9BB82A, #C8F135)', transition: 'width 1s ease' }}
-              />
+              <div className="h-full rounded-full" style={{ width: `${xpPercent}%`, background: 'linear-gradient(to right, #9BB82A, #C8F135)' }} />
             </div>
           </div>
 
-          {/* Stats row */}
+          {/* Stats */}
           <div className="grid grid-cols-4 gap-2 mb-5">
-            <StatPill value={profile.stats.projects} label="Projects" />
-            <StatPill value={profile.stats.missions} label="Missions" />
-            <StatPill value={profile.stats.hackathons} label="Hackathons" />
-            <StatPill value={profile.stats.contributions} label="Contributions" />
+            <StatPill value={projects.length} label="Projects" />
+            <StatPill value={profile.reputation} label="Rep" />
+            <StatPill value={profile.xp} label="XP" />
+            <StatPill value={activities.length} label="Posts" />
           </div>
 
           {/* Links */}
           <div className="flex gap-3 flex-wrap">
-            {profile.links.github && (
-              <a href={`https://${profile.links.github.replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer"
+            {profile.github && (
+              <a href={`https://${profile.github}`} target="_blank" rel="noreferrer"
                 className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-lg border transition-all"
                 style={{ borderColor: '#2A2A30', color: '#7A7A8C', background: '#1C1C20' }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = '#C8F135'; e.currentTarget.style.color = '#C8F135'; }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = '#2A2A30'; e.currentTarget.style.color = '#7A7A8C'; }}
-              >
-                <GithubIcon /> GitHub
-              </a>
+              ><GithubIcon /> GitHub</a>
             )}
-            {profile.links.linkedin && (
-              <a href={`https://${profile.links.linkedin.replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer"
+            {profile.linkedin && (
+              <a href={`https://${profile.linkedin}`} target="_blank" rel="noreferrer"
                 className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-lg border transition-all"
                 style={{ borderColor: '#2A2A30', color: '#7A7A8C', background: '#1C1C20' }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = '#C8F135'; e.currentTarget.style.color = '#C8F135'; }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = '#2A2A30'; e.currentTarget.style.color = '#7A7A8C'; }}
-              >
-                <LinkedinIcon /> LinkedIn
-              </a>
+              ><LinkedinIcon /> LinkedIn</a>
             )}
-            {profile.links.portfolio && (
-              <a href={`https://${profile.links.portfolio.replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer"
+            {profile.portfolio && (
+              <a href={`https://${profile.portfolio}`} target="_blank" rel="noreferrer"
                 className="flex items-center gap-1.5 font-mono text-xs px-3 py-1.5 rounded-lg border transition-all"
                 style={{ borderColor: '#2A2A30', color: '#7A7A8C', background: '#1C1C20' }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = '#C8F135'; e.currentTarget.style.color = '#C8F135'; }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = '#2A2A30'; e.currentTarget.style.color = '#7A7A8C'; }}
-              >
-                <Globe size={12} /> Portfolio
-              </a>
+              ><Globe size={12} /> Portfolio</a>
             )}
             {!isMe && (
-              <button
-                className="ml-auto flex items-center gap-1.5 font-display font-medium text-xs px-4 py-1.5 rounded-lg transition-all"
+              <button className="ml-auto flex items-center gap-1.5 font-display font-medium text-xs px-4 py-1.5 rounded-lg transition-all"
                 style={{ background: '#C8F135', color: '#0D0D0F' }}
                 onMouseEnter={e => { e.currentTarget.style.background = '#d4f547'; }}
                 onMouseLeave={e => { e.currentTarget.style.background = '#C8F135'; }}
-              >
-                Connect
-              </button>
+              >Connect</button>
             )}
           </div>
         </div>
 
-        {/* ── BADGES ── */}
-        {profile.badges && profile.badges.length > 0 && (
-          <div className="rounded-2xl border p-5" style={{ background: '#141416', borderColor: '#2A2A30' }}>
-            <h2 className="font-mono text-xs mb-4" style={{ color: '#7A7A8C' }}>BADGES</h2>
-            <div className="flex flex-wrap gap-2">
-              {profile.badges.map(b => (
-                <div
-                  key={b.label}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-full border font-body text-xs"
-                  style={{ background: '#1C1C20', borderColor: '#2A2A30', color: '#E8E8F0' }}
-                >
-                  <span>{b.icon}</span>
-                  {b.label}
+        {/* Skills + Looking For */}
+        {(profile.skills?.length > 0 || profile.looking_for?.length > 0) && (
+          <div className="grid md:grid-cols-2 gap-4">
+            {profile.skills?.length > 0 && (
+              <div className="rounded-2xl border p-5" style={{ background: '#141416', borderColor: '#2A2A30' }}>
+                <h2 className="font-mono text-xs mb-4" style={{ color: '#7A7A8C' }}>SKILLS</h2>
+                <div className="flex flex-wrap gap-2">
+                  {profile.skills.map((s: string) => <Tag key={s} label={s} variant="dim" />)}
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
+            {profile.looking_for?.length > 0 && (
+              <div className="rounded-2xl border p-5" style={{ background: '#141416', borderColor: '#2A2A30' }}>
+                <h2 className="font-mono text-xs mb-4" style={{ color: '#7A7A8C' }}>LOOKING TO COLLABORATE WITH</h2>
+                <div className="flex flex-wrap gap-2">
+                  {profile.looking_for.map((r: string) => <Tag key={r} label={r} variant="volt" />)}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
-        {/* ── SKILLS + LOOKING FOR ── */}
-        <div className="grid md:grid-cols-2 gap-4">
-          <div className="rounded-2xl border p-5" style={{ background: '#141416', borderColor: '#2A2A30' }}>
-            <h2 className="font-mono text-xs mb-4" style={{ color: '#7A7A8C' }}>SKILLS</h2>
-            <div className="flex flex-wrap gap-2">
-              {profile.skills && profile.skills.length > 0 ? (
-                profile.skills.map(s => <Tag key={s} label={s} variant="dim" />)
-              ) : (
-                <span className="font-body text-xs" style={{ color: '#3A3A46' }}>No skills listed yet</span>
-              )}
-            </div>
-          </div>
-          <div className="rounded-2xl border p-5" style={{ background: '#141416', borderColor: '#2A2A30' }}>
-            <h2 className="font-mono text-xs mb-4" style={{ color: '#7A7A8C' }}>LOOKING TO COLLABORATE WITH</h2>
-            <div className="flex flex-wrap gap-2">
-              {profile.lookingFor && profile.lookingFor.length > 0 ? (
-                profile.lookingFor.map(r => <Tag key={r} label={r} variant="volt" />)
-              ) : (
-                <span className="font-body text-xs" style={{ color: '#3A3A46' }}>Open to collaborations</span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* ── CURRENT PROJECTS ── */}
-        {userProjects.length > 0 && (
+        {/* Projects */}
+        {projects.length > 0 && (
           <div>
             <h2 className="font-mono text-xs mb-4" style={{ color: '#7A7A8C' }}>PROJECTS</h2>
             <div className="flex flex-col gap-3">
-              {userProjects.map(project => (
-                <Link
-                  key={project.id}
-                  href={`/projects/${project.id}`}
+              {projects.map(p => (
+                <Link key={p.id} href={`/projects/${p.id}`}
                   className="card-hover flex items-start gap-4 p-4 rounded-xl border"
                   style={{ background: '#141416', borderColor: '#2A2A30' }}
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="font-display font-semibold text-sm" style={{ color: '#E8E8F0' }}>{project.name}</span>
-                      <span
-                        className="font-mono text-[10px] px-2 py-0.5 rounded-full"
-                        style={{
-                          background: project.status === 'active' ? 'rgba(200,241,53,0.1)' : '#1C1C20',
-                          color: project.status === 'active' ? '#C8F135' : '#7A7A8C',
-                          border: `1px solid ${project.status === 'active' ? 'rgba(200,241,53,0.2)' : '#2A2A30'}`,
-                        }}
-                      >
-                        {project.status}
+                      <span className="font-display font-semibold text-sm" style={{ color: '#E8E8F0' }}>{p.name}</span>
+                      <span className="font-mono text-[10px] px-2 py-0.5 rounded-full"
+                        style={{ background: 'rgba(200,241,53,0.1)', color: '#C8F135', border: '1px solid rgba(200,241,53,0.15)' }}>
+                        {p.status}
                       </span>
                     </div>
-                    <p className="font-body text-xs mb-2" style={{ color: '#7A7A8C' }}>{project.tagline}</p>
+                    <p className="font-body text-xs mb-2" style={{ color: '#7A7A8C' }}>{p.tagline}</p>
                     <div className="flex flex-wrap gap-1.5">
-                      {project.stack.slice(0, 4).map(s => <Tag key={s} label={s} />)}
+                      {p.stack?.slice(0, 4).map((s: string) => <Tag key={s} label={s} />)}
                     </div>
                   </div>
                   <ExternalLink size={14} style={{ color: '#3A3A46', flexShrink: 0 }} />
@@ -324,18 +262,20 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
           </div>
         )}
 
-        {/* ── RECENT ACTIVITY ── */}
-        {userActivity.length > 0 ? (
+        {/* Activity */}
+        {activities.length > 0 && (
           <div>
             <h2 className="font-mono text-xs mb-4" style={{ color: '#7A7A8C' }}>RECENT ACTIVITY</h2>
             <div className="flex flex-col gap-3">
-              {userActivity.map(a => <ActivityCard key={a.id} activity={a} />)}
+              {activities.map(a => <ActivityCard key={a.id} activity={toCard(a)} />)}
             </div>
           </div>
-        ) : (
+        )}
+
+        {activities.length === 0 && projects.length === 0 && (
           <div className="text-center py-12 rounded-2xl border" style={{ borderColor: '#2A2A30', background: '#141416' }}>
-            <p className="font-display text-base" style={{ color: '#3A3A46' }}>No activity posts yet.</p>
-            <p className="font-body text-xs mt-1" style={{ color: '#3A3A46' }}>Complete a mission or post an update to appear in the feed.</p>
+            <p className="font-display text-base" style={{ color: '#3A3A46' }}>No activity yet.</p>
+            <p className="font-body text-xs mt-1" style={{ color: '#3A3A46' }}>Complete a mission or join a project to appear in the feed.</p>
           </div>
         )}
       </main>

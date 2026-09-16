@@ -1,4 +1,5 @@
-// src/app/(app)/layout.tsx
+import { redirect } from 'next/navigation';
+import { createClient } from '@/lib/supabase/server';
 import Sidebar from '@/components/layout/Sidebar';
 import MobileNav from '@/components/layout/MobileNav';
 import { AuthProvider, AuthUser } from '@/components/providers/AuthProvider';

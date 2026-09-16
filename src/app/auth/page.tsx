@@ -1,10 +1,9 @@
 'use client';
 import { useState, Suspense } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
-import { ArrowLeft, Eye, EyeOff, Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
-import { signUpUser, signInUser } from '@/lib/actions/auth';
 
 function GithubIcon() {
   return (
@@ -15,307 +14,208 @@ function GithubIcon() {
 }
 
 function AuthForm() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const defaultMode = searchParams.get('mode') === 'join' ? 'join' : 'signin';
   const [mode, setMode] = useState<'signin' | 'join'>(defaultMode);
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [infoMsg, setInfoMsg] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: '', email: '', college: '', password: '' });
+  const [error, setError] = useState('');
+  const [form, setForm] = useState({
+    name: '', email: '', college: '', handle: '', password: '',
+  });
 
-  const fields = mode === 'join'
-    ? [
-        { key: 'name',     label: 'Full name',          placeholder: 'Amna Sehgal',       type: 'text'     },
-        { key: 'email',    label: 'College email',       placeholder: 'you@college.edu',   type: 'email'    },
-        { key: 'college',  label: 'College',             placeholder: 'IGDTUW, DTU, NSUT…',type: 'text'     },
-        { key: 'password', label: 'Password',            placeholder: '········',          type: 'password' },
-      ]
-    : [
-        { key: 'email',    label: 'Email',               placeholder: 'you@college.edu',   type: 'email'    },
-        { key: 'password', label: 'Password',            placeholder: '········',          type: 'password' },
-      ];
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMsg(null);
-    setInfoMsg(null);
+  const handleAuth = async () => {
     setLoading(true);
+    setError('');
+    const supabase = createClient();
 
-    try {
-      if (mode === 'join') {
-        const res = await signUpUser({
-          name: form.name,
-          email: form.email,
-          college: form.college,
-          password: form.password,
-        });
-
-        if (res.error) {
-          setErrorMsg(res.error);
-        } else if (res.needsEmailConfirmation) {
-          setInfoMsg('Account created! Please check your email to confirm your account or sign in below.');
-          setMode('signin');
-        } else {
-          // Sync browser client session
-          const supabase = createClient();
-          await supabase.auth.signInWithPassword({
-            email: form.email,
-            password: form.password,
-          });
-          window.location.href = '/feed';
-        }
-      } else {
-        const res = await signInUser({
-          email: form.email,
-          password: form.password,
-        });
-
-        if (res.error) {
-          setErrorMsg(res.error);
-        } else {
-          // Sync browser client session
-          const supabase = createClient();
-          await supabase.auth.signInWithPassword({
-            email: form.email,
-            password: form.password,
-          });
-          window.location.href = '/feed';
-        }
-      }
-    } catch {
-      setErrorMsg('An unexpected error occurred. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleGithubOAuth = async () => {
-    try {
-      const supabase = createClient();
-      await supabase.auth.signInWithOAuth({
-        provider: 'github',
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
+    if (mode === 'join') {
+      // Sign up
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: form.email,
+        password: form.password,
       });
-    } catch {
-      setErrorMsg('Failed to initialize GitHub login.');
+      if (signUpError) { setError(signUpError.message); setLoading(false); return; }
+
+      if (data.user) {
+        // Create profile
+        const handle = form.handle || form.email.split('@')[0].replace(/[^a-z0-9_]/gi, '_').toLowerCase();
+        const { error: profileError } = await supabase.from('profiles').insert({
+          id: data.user.id,
+          name: form.name,
+          handle,
+          avatar: form.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2),
+          college: form.college,
+        });
+        if (profileError) { setError(profileError.message); setLoading(false); return; }
+
+        // Insert welcome activity
+        await supabase.from('activities').insert({
+          user_id: data.user.id,
+          type: 'joined_platform',
+          content: 'joined Near Now',
+          tags: [],
+        });
+      }
+      router.push('/feed');
+    } else {
+      // Sign in
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: form.email,
+        password: form.password,
+      });
+      if (signInError) { setError(signInError.message); setLoading(false); return; }
+      router.push('/feed');
     }
+    setLoading(false);
   };
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: '#0D0D0F' }}>
-      {/* Grid bg */}
-      <div
-        className="fixed inset-0 pointer-events-none"
-        style={{
-          backgroundImage: `
-            linear-gradient(rgba(42,42,48,0.25) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(42,42,48,0.25) 1px, transparent 1px)
-          `,
-          backgroundSize: '60px 60px',
-          maskImage: 'radial-gradient(ellipse 70% 70% at 50% 50%, black, transparent)',
-        }}
-      />
-      <div
-        className="fixed top-0 left-1/2 -translate-x-1/2 pointer-events-none"
-        style={{
-          width: '500px', height: '300px',
-          background: 'radial-gradient(ellipse, rgba(200,241,53,0.06) 0%, transparent 70%)',
-        }}
-      />
+      <div className="fixed inset-0 pointer-events-none" style={{ backgroundImage: `linear-gradient(rgba(42,42,48,0.25) 1px, transparent 1px), linear-gradient(90deg, rgba(42,42,48,0.25) 1px, transparent 1px)`, backgroundSize: '60px 60px', maskImage: 'radial-gradient(ellipse 70% 70% at 50% 50%, black, transparent)' }} />
+      <div className="fixed top-0 left-1/2 -translate-x-1/2 pointer-events-none" style={{ width: '500px', height: '300px', background: 'radial-gradient(ellipse, rgba(200,241,53,0.06) 0%, transparent 70%)' }} />
 
-      <header className="relative px-6 h-14 flex items-center justify-between z-10">
+      <header className="relative px-6 h-14 flex items-center justify-between">
         <Link href="/" className="flex items-center gap-2 font-body text-sm transition-colors" style={{ color: '#7A7A8C' }}
           onMouseEnter={e => { e.currentTarget.style.color = '#E8E8F0'; }}
           onMouseLeave={e => { e.currentTarget.style.color = '#7A7A8C'; }}
         >
-          <ArrowLeft size={14} />
-          Back
+          <ArrowLeft size={14} /> Back
         </Link>
         <Link href="/" className="flex items-center gap-2">
           <span className="pulse-dot w-1.5 h-1.5 rounded-full" style={{ background: '#C8F135', display: 'inline-block' }} />
-          <span className="font-display font-semibold text-sm" style={{ color: '#E8E8F0' }}>
-            near<span style={{ color: '#C8F135' }}>now</span>
-          </span>
+          <span className="font-display font-semibold text-sm" style={{ color: '#E8E8F0' }}>near<span style={{ color: '#C8F135' }}>now</span></span>
         </Link>
         <div className="w-16" />
       </header>
 
-      <div className="relative flex-1 flex items-center justify-center px-6 py-12 z-10">
+      <div className="relative flex-1 flex items-center justify-center px-6 py-12">
         <div className="w-full max-w-sm">
           {/* Toggle */}
-          <div
-            className="flex p-1 rounded-xl mb-8"
-            style={{ background: '#141416', border: '1px solid #2A2A30' }}
-          >
+          <div className="flex p-1 rounded-xl mb-8" style={{ background: '#141416', border: '1px solid #2A2A30' }}>
             {(['signin', 'join'] as const).map(m => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => { setMode(m); setErrorMsg(null); setInfoMsg(null); }}
+              <button key={m} onClick={() => { setMode(m); setError(''); }}
                 className="flex-1 h-9 rounded-lg font-display font-medium text-sm transition-all duration-200"
-                style={{
-                  background: mode === m ? '#1C1C20' : 'transparent',
-                  color: mode === m ? '#E8E8F0' : '#7A7A8C',
-                  border: mode === m ? '1px solid #2A2A30' : '1px solid transparent',
-                }}
+                style={{ background: mode === m ? '#1C1C20' : 'transparent', color: mode === m ? '#E8E8F0' : '#7A7A8C', border: mode === m ? '1px solid #2A2A30' : '1px solid transparent' }}
               >
                 {m === 'signin' ? 'Sign in' : 'Join'}
               </button>
             ))}
           </div>
 
-          {/* Heading */}
           <div className="mb-6">
             <h1 className="font-display font-bold text-2xl mb-1" style={{ color: '#E8E8F0' }}>
               {mode === 'join' ? 'Start building.' : 'Welcome back.'}
             </h1>
             <p className="font-body text-sm" style={{ color: '#7A7A8C' }}>
-              {mode === 'join'
-                ? 'Join the builder community. Show your work.'
-                : 'Jump back into your feed.'}
+              {mode === 'join' ? 'Join the builder community. Show your work.' : 'Jump back into your feed.'}
             </p>
           </div>
 
-          {/* Info Banner */}
-          {infoMsg && (
-            <div
-              className="flex items-start gap-2.5 p-3 rounded-xl mb-5 border font-body text-xs leading-relaxed"
-              style={{ background: 'rgba(200,241,53,0.1)', borderColor: 'rgba(200,241,53,0.3)', color: '#C8F135' }}
-            >
-              <CheckCircle2 size={14} className="flex-shrink-0 mt-0.5" />
-              <div>{infoMsg}</div>
-            </div>
-          )}
-
-          {/* Error Banner */}
-          {errorMsg && (
-            <div
-              className="flex items-start gap-2.5 p-3 rounded-xl mb-5 border font-body text-xs leading-relaxed"
-              style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.3)', color: '#F87171' }}
-            >
-              <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
-              <div>{errorMsg}</div>
+          {/* Error */}
+          {error && (
+            <div className="mb-4 px-4 py-3 rounded-xl font-body text-sm" style={{ background: 'rgba(255,80,80,0.08)', border: '1px solid rgba(255,80,80,0.2)', color: '#ff6b6b' }}>
+              {error}
             </div>
           )}
 
           {/* GitHub OAuth */}
           <button
-            type="button"
-            onClick={handleGithubOAuth}
+            onClick={async () => {
+              const supabase = createClient();
+              await supabase.auth.signInWithOAuth({ provider: 'github', options: { redirectTo: `${window.location.origin}/feed` } });
+            }}
             className="w-full h-10 flex items-center justify-center gap-2.5 rounded-xl font-body text-sm mb-5 transition-all duration-200"
             style={{ background: '#1C1C20', border: '1px solid #2A2A30', color: '#E8E8F0' }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = '#3A3A44'; e.currentTarget.style.background = '#222226'; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = '#2A2A30'; e.currentTarget.style.background = '#1C1C20'; }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = '#3A3A44'; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = '#2A2A30'; }}
           >
             <span style={{ color: '#C8F135' }}><GithubIcon /></span>
             Continue with GitHub
           </button>
 
-          {/* Divider */}
           <div className="flex items-center gap-3 mb-5">
             <div className="flex-1 h-px" style={{ background: '#2A2A30' }} />
             <span className="font-mono text-xs" style={{ color: '#3A3A46' }}>or</span>
             <div className="flex-1 h-px" style={{ background: '#2A2A30' }} />
           </div>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit}>
-            <div className="flex flex-col gap-3 mb-5">
-              {fields.map(field => (
-                <div key={field.key}>
-                  <label className="font-mono text-[11px] mb-1.5 block" style={{ color: '#7A7A8C' }}>
-                    {field.label.toUpperCase()}
-                  </label>
-                  <div className="relative">
-                    <input
-                      type={field.key === 'password' && showPass ? 'text' : field.type}
-                      placeholder={field.placeholder}
-                      value={form[field.key as keyof typeof form]}
-                      onChange={e => setForm({ ...form, [field.key]: e.target.value })}
-                      required
-                      className="w-full h-10 px-3 rounded-xl font-body text-sm outline-none transition-all duration-200"
-                      style={{ background: '#141416', border: '1px solid #2A2A30', color: '#E8E8F0' }}
-                      onFocus={e => { e.target.style.borderColor = '#C8F135'; e.target.style.boxShadow = '0 0 0 3px rgba(200,241,53,0.06)'; }}
-                      onBlur={e => { e.target.style.borderColor = '#2A2A30'; e.target.style.boxShadow = 'none'; }}
-                    />
-                    {field.key === 'password' && (
-                      <button
-                        type="button"
-                        onClick={() => setShowPass(!showPass)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2"
-                        style={{ color: '#3A3A46' }}
-                      >
-                        {showPass ? <EyeOff size={14} /> : <Eye size={14} />}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
+          {/* Fields */}
+          <div className="flex flex-col gap-3 mb-5">
+            {mode === 'join' && (
+              <>
+                <Field label="Full name">
+                  <Input type="text" value={form.name} onChange={v => setForm({ ...form, name: v })} placeholder="Amna Sehgal" />
+                </Field>
+                <Field label="Username">
+                  <Input type="text" value={form.handle} onChange={v => setForm({ ...form, handle: v.toLowerCase().replace(/\s/g, '_') })} placeholder="amna_s" />
+                </Field>
+                <Field label="College">
+                  <Input type="text" value={form.college} onChange={v => setForm({ ...form, college: v })} placeholder="IGDTUW, DTU, NSUT..." />
+                </Field>
+              </>
+            )}
+            <Field label="Email">
+              <Input type="email" value={form.email} onChange={v => setForm({ ...form, email: v })} placeholder="you@college.edu" />
+            </Field>
+            <Field label="Password">
+              <div className="relative">
+                <Input type={showPass ? 'text' : 'password'} value={form.password} onChange={v => setForm({ ...form, password: v })} placeholder="········" />
+                <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2" style={{ color: '#3A3A46' }}>
+                  {showPass ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
+            </Field>
+          </div>
 
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full h-11 rounded-xl font-display font-semibold text-sm transition-all duration-200 mb-4 flex items-center justify-center gap-2"
-              style={{ background: '#C8F135', color: '#0D0D0F', opacity: loading ? 0.7 : 1 }}
-              onMouseEnter={e => { if (!loading) { e.currentTarget.style.background = '#d4f547'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(200,241,53,0.2)'; } }}
-              onMouseLeave={e => { if (!loading) { e.currentTarget.style.background = '#C8F135'; e.currentTarget.style.boxShadow = 'none'; } }}
+          <button
+            onClick={handleAuth}
+            disabled={loading}
+            className="w-full h-11 rounded-xl font-display font-semibold text-sm transition-all duration-200 mb-4"
+            style={{ background: loading ? '#9BB82A' : '#C8F135', color: '#0D0D0F' }}
+            onMouseEnter={e => { if (!loading) e.currentTarget.style.background = '#d4f547'; }}
+            onMouseLeave={e => { if (!loading) e.currentTarget.style.background = '#C8F135'; }}
+          >
+            {loading ? 'Please wait...' : mode === 'join' ? 'Create account' : 'Sign in'}
+          </button>
+
+          <p className="text-center font-body text-xs" style={{ color: '#3A3A46' }}>
+            {mode === 'signin' ? "No account? " : "Already building? "}
+            <button onClick={() => { setMode(mode === 'signin' ? 'join' : 'signin'); setError(''); }}
+              style={{ color: '#7A7A8C' }}
+              onMouseEnter={e => { e.currentTarget.style.color = '#C8F135'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = '#7A7A8C'; }}
             >
-              {loading ? (
-                <>
-                  <Loader2 size={16} className="animate-spin" />
-                  Processing...
-                </>
-              ) : mode === 'join' ? (
-                'Create account'
-              ) : (
-                'Sign in'
-              )}
+              {mode === 'signin' ? 'Join Near Now' : 'Sign in'}
             </button>
-          </form>
-
-          {mode === 'signin' && (
-            <p className="text-center font-body text-xs" style={{ color: '#3A3A46' }}>
-              No account?{' '}
-              <button
-                type="button"
-                onClick={() => { setMode('join'); setErrorMsg(null); setInfoMsg(null); }}
-                style={{ color: '#7A7A8C' }}
-                onMouseEnter={e => { e.currentTarget.style.color = '#C8F135'; }}
-                onMouseLeave={e => { e.currentTarget.style.color = '#7A7A8C'; }}
-              >
-                Join Near Now
-              </button>
-            </p>
-          )}
-          {mode === 'join' && (
-            <p className="text-center font-body text-xs" style={{ color: '#3A3A46' }}>
-              Already building?{' '}
-              <button
-                type="button"
-                onClick={() => { setMode('signin'); setErrorMsg(null); setInfoMsg(null); }}
-                style={{ color: '#7A7A8C' }}
-                onMouseEnter={e => { e.currentTarget.style.color = '#C8F135'; }}
-                onMouseLeave={e => { e.currentTarget.style.color = '#7A7A8C'; }}
-              >
-                Sign in
-              </button>
-            </p>
-          )}
+          </p>
         </div>
       </div>
     </div>
   );
 }
 
-export default function AuthPage() {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <Suspense>
-      <AuthForm />
-    </Suspense>
+    <div className="flex flex-col gap-1.5">
+      <label className="font-mono text-[11px]" style={{ color: '#7A7A8C' }}>{label.toUpperCase()}</label>
+      {children}
+    </div>
   );
+}
+
+function Input({ type, value, onChange, placeholder }: { type: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+  return (
+    <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder}
+      className="w-full h-10 px-3 rounded-xl font-body text-sm outline-none transition-all"
+      style={{ background: '#141416', border: '1px solid #2A2A30', color: '#E8E8F0' }}
+      onFocus={e => { e.target.style.borderColor = '#C8F135'; e.target.style.boxShadow = '0 0 0 3px rgba(200,241,53,0.06)'; }}
+      onBlur={e => { e.target.style.borderColor = '#2A2A30'; e.target.style.boxShadow = 'none'; }}
+    />
+  );
+}
+
+export default function AuthPage() {
+  return <Suspense><AuthForm /></Suspense>;
 }

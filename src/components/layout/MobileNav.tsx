@@ -1,4 +1,3 @@
-// src/components/layout/MobileNav.tsx
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -12,30 +11,34 @@ export default function MobileNav() {
   const profileHref = user?.handle ? `/profile/${user.handle}` : '/auth';
 
   const NAV = [
-    { href: '/feed',          icon: Activity, label: 'Feed'        },
-    { href: '/projects',      icon: Layers,   label: 'Projects'    },
-    { href: '/missions',      icon: Zap,      label: 'Missions'    },
-    { href: '/opportunities', icon: Compass,  label: 'Opportunities'},
-    { href: profileHref,      icon: User,     label: 'Profile'     },
+    { href: '/feed',                                  icon: Activity, label: 'Feed'    },
+    { href: '/projects',                              icon: Layers,   label: 'Projects'},
+    { href: '/match',                                 icon: Users,    label: 'Match'   },
+    { href: '/notifications',                         icon: Bell,     label: 'Alerts', badge: unread },
+    { href: handle ? `/profile/${handle}` : '/feed',  icon: User,     label: 'Profile' },
   ];
 
   return (
-    <nav
-      className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t"
-      style={{ background: 'rgba(13,13,15,0.95)', backdropFilter: 'blur(12px)', borderColor: '#2A2A30' }}
-    >
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t"
+      style={{ background: 'rgba(13,13,15,0.95)', backdropFilter: 'blur(12px)', borderColor: '#2A2A30' }}>
       <div className="flex items-center">
-        {NAV.map(({ href, icon: Icon, label }) => {
-          const active = pathname === href || (href !== '/auth' && pathname.startsWith(href + '/'));
+        {NAV.map(({ href, icon: Icon, label, badge }) => {
+          const active = pathname === href || pathname.startsWith(href + '/');
           return (
-            <Link
-              key={href}
-              href={href}
-              className="flex-1 flex flex-col items-center gap-1 py-3 transition-all"
+            <Link key={label} href={href}
+              className="flex-1 flex flex-col items-center gap-1 py-3 transition-all relative"
               style={{ color: active ? '#C8F135' : '#3A3A46' }}
             >
-              <Icon size={18} />
-              <span className="font-mono text-[9px] truncate px-1">{label}</span>
+              <div className="relative">
+                <Icon size={18} />
+                {badge && badge > 0 && (
+                  <span className="absolute -top-1 -right-1 w-3.5 h-3.5 rounded-full flex items-center justify-center font-mono text-[8px]"
+                    style={{ background: '#C8F135', color: '#0D0D0F' }}>
+                    {badge > 9 ? '9+' : badge}
+                  </span>
+                )}
+              </div>
+              <span className="font-mono text-[9px]">{label}</span>
             </Link>
           );
         })}
