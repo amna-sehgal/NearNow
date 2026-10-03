@@ -129,9 +129,11 @@ export default function Sidebar({ userId }: { userId: string }) {
           <Bell size={16} />
           Notifications
           {unreadCount > 0 && (
-            <span className="ml-auto font-mono text-[9px] px-1.5 py-0.5 rounded-full"
-              style={{ background: 'rgba(200,241,53,0.15)', color: '#C8F135' }}>
-              {unreadCount}
+            <span
+              className="ml-auto font-mono text-[9px] min-w-[18px] h-[18px] flex items-center justify-center rounded-full"
+              style={{ background: '#ef4444', color: '#ffffff', fontWeight: 700 }}
+            >
+              {unreadCount > 9 ? '9+' : unreadCount}
             </span>
           )}
         </Link>

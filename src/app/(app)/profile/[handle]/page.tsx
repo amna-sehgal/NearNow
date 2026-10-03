@@ -12,7 +12,7 @@ import { Globe, MapPin, GraduationCap, Edit3, Star, ExternalLink, Award, History
 function GithubIcon({ size = 12 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+      <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
     </svg>
   );
 }
@@ -20,7 +20,7 @@ function GithubIcon({ size = 12 }: { size?: number }) {
 function LinkedinIcon({ size = 12 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
     </svg>
   );
 }
@@ -36,7 +36,9 @@ function StatPill({ value, label }: { value: number; label: string }) {
 
 export default function ProfilePage({ params }: { params: Promise<{ handle: string }> }) {
   const { handle } = use(params);
-  const { profile: myProfile } = useProfile();
+  const { profile: myProfile, user } = useProfile();
+  const [connStatus, setConnStatus] = useState<'none' | 'pending_sent' | 'pending_received' | 'connected'>('none');
+  const [connecting, setConnecting] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [profile, setProfile] = useState<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -99,6 +101,56 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
     fetch();
   }, [handle]);
 
+  // Check connection status separately so it updates when user changes
+  useEffect(() => {
+    const checkConn = async () => {
+      if (!user || isMe || !profile) return;
+      const supabase = createClient();
+      const { data } = await supabase
+        .from('connections')
+        .select('sender_id, receiver_id, status')
+        .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+        .or(`sender_id.eq.${profile.id},receiver_id.eq.${profile.id}`)
+        .limit(10);
+
+      const conn = (data || []).find((c: any) =>
+        (c.sender_id === user.id && c.receiver_id === profile.id) ||
+        (c.sender_id === profile.id && c.receiver_id === user.id)
+      );
+
+      if (!conn) { setConnStatus('none'); return; }
+      if (conn.status === 'connected') { setConnStatus('connected'); return; }
+      if (conn.status === 'pending') {
+        setConnStatus(conn.sender_id === user.id ? 'pending_sent' : 'pending_received');
+      }
+    };
+    checkConn();
+  }, [user, profile, isMe]);
+
+  const handleConnect = async () => {
+    if (!user || !myProfile || !profile) return;
+    setConnecting(true);
+    const supabase = createClient();
+
+    await supabase.from('connections').insert({
+      sender_id: user.id,
+      receiver_id: profile.id,
+      status: 'pending',
+    });
+
+    await supabase.from('notifications').insert({
+      user_id: profile.id,
+      type: 'connection_request',
+      title: 'New connection request',
+      body: `${myProfile.name} wants to connect with you`,
+      link: `/profile/${myProfile.handle}`,
+      read: false,
+    });
+
+    setConnStatus('pending_sent');
+    setConnecting(false);
+  };
+
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: '#0D0D0F' }}>
       <div className="font-mono text-sm" style={{ color: '#7A7A8C' }}>Loading profile...</div>
@@ -147,7 +199,7 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
         {/* Identity card */}
         <div className="rounded-2xl border p-6" style={{ background: '#141416', borderColor: '#2A2A30' }}>
           <div className="flex items-start gap-4 mb-5">
-            <Avatar initials={profile.avatar || profile.name?.slice(0,2).toUpperCase() || 'NN'} size="lg" glow />
+            <Avatar initials={profile.avatar || profile.name?.slice(0, 2).toUpperCase() || 'NN'} size="lg" glow />
             <div className="flex-1">
               <h1 className="font-display font-bold text-xl" style={{ color: '#E8E8F0' }}>{profile.name}</h1>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
@@ -224,11 +276,38 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
               ><Globe size={12} /> Portfolio</a>
             )}
             {!isMe && (
-              <button className="ml-auto flex items-center gap-1.5 font-display font-medium text-xs px-4 py-1.5 rounded-lg transition-all"
-                style={{ background: '#C8F135', color: '#0D0D0F' }}
-                onMouseEnter={e => { e.currentTarget.style.background = '#d4f547'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = '#C8F135'; }}
-              >Connect</button>
+              <>
+                {connStatus === 'connected' && (
+                  <span className="ml-auto flex items-center gap-1.5 font-mono text-xs px-4 py-1.5 rounded-lg"
+                    style={{ background: 'rgba(200,241,53,0.08)', color: '#C8F135', border: '1px solid rgba(200,241,53,0.2)' }}>
+                    ✓ Connected
+                  </span>
+                )}
+                {connStatus === 'pending_sent' && (
+                  <span className="ml-auto flex items-center gap-1.5 font-mono text-xs px-4 py-1.5 rounded-lg"
+                    style={{ background: '#1C1C20', color: '#7A7A8C', border: '1px solid #2A2A30' }}>
+                    Requested
+                  </span>
+                )}
+                {connStatus === 'pending_received' && (
+                  <span className="ml-auto flex items-center gap-1.5 font-mono text-xs px-4 py-1.5 rounded-lg"
+                    style={{ background: 'rgba(200,241,53,0.06)', color: '#9BB82A', border: '1px solid rgba(200,241,53,0.15)' }}>
+                    Wants to connect
+                  </span>
+                )}
+                {connStatus === 'none' && (
+                  <button
+                    onClick={handleConnect}
+                    disabled={connecting}
+                    className="ml-auto flex items-center gap-1.5 font-display font-medium text-xs px-4 py-1.5 rounded-lg transition-all"
+                    style={{ background: connecting ? '#9BB82A' : '#C8F135', color: '#0D0D0F' }}
+                    onMouseEnter={e => { if (!connecting) e.currentTarget.style.background = '#d4f547'; }}
+                    onMouseLeave={e => { if (!connecting) e.currentTarget.style.background = '#C8F135'; }}
+                  >
+                    {connecting ? 'Sending...' : 'Connect'}
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>
