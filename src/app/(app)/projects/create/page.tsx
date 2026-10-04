@@ -59,11 +59,7 @@ export default function CreateProjectPage() {
       return;
     }
 
-    if (res.projectId) {
-      router.push(`/projects/${res.projectId}`);
-    } else {
-      router.push('/projects');
-    }
+    router.push('/projects');
   };
   return (
     <div className="min-h-screen" style={{ background: '#0D0D0F' }}>

@@ -3,17 +3,17 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useProfile } from '@/lib/supabase/hooks';
 import Link from 'next/link';
-import { Bell, Check, X, Users, Heart, MessageCircle } from 'lucide-react';
-
+import { Bell, Check, X, Users, Heart, MessageCircle, Layers, UserCheck, UserX } from 'lucide-react';
 const TYPE_CONFIG: Record<string, { icon: React.ElementType; color: string; bg: string }> = {
-  connection_request:  { icon: Users,  color: '#C8F135', bg: 'rgba(200,241,53,0.08)' },
-  connection_accepted: { icon: Users,  color: '#C8F135', bg: 'rgba(200,241,53,0.08)' },
-  project_apply:       { icon: Bell,   color: '#C8F135', bg: 'rgba(200,241,53,0.08)' },
-  like:                { icon: Heart,  color: '#C8F135', bg: 'rgba(200,241,53,0.08)' },
-  comment:             { icon: MessageCircle, color: '#9BB82A', bg: 'rgba(155,184,42,0.08)' },
-  mission_complete:    { icon: Bell,   color: '#9BB82A', bg: 'rgba(155,184,42,0.08)' },
-  opportunity_match:   { icon: Bell,   color: '#9BB82A', bg: 'rgba(155,184,42,0.08)' },
-  default:             { icon: Bell,   color: '#7A7A8C', bg: 'rgba(42,42,48,0.5)'    },
+  connection_request:    { icon: Users,          color: '#C8F135', bg: 'rgba(200,241,53,0.08)' },
+  connection_accepted:   { icon: Users,          color: '#C8F135', bg: 'rgba(200,241,53,0.08)' },
+  project_apply:         { icon: Layers,         color: '#C8F135', bg: 'rgba(200,241,53,0.08)' },
+  application_accepted:  { icon: UserCheck,      color: '#C8F135', bg: 'rgba(200,241,53,0.08)' },
+  application_declined:  { icon: UserX,          color: '#ff6b6b', bg: 'rgba(255,80,80,0.08)'  },
+  like:                  { icon: Heart,          color: '#C8F135', bg: 'rgba(200,241,53,0.08)' },
+  comment:               { icon: MessageCircle,  color: '#9BB82A', bg: 'rgba(155,184,42,0.08)' },
+  mission_complete:      { icon: Bell,           color: '#9BB82A', bg: 'rgba(155,184,42,0.08)' },
+  default:               { icon: Bell,           color: '#7A7A8C', bg: 'rgba(42,42,48,0.5)'    },
 };
 
 export default function NotificationsPage() {
