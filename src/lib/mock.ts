@@ -1,16 +1,10 @@
 // src/lib/mock.ts
 import { Activity, ACTIVITIES } from './data';
+import { CANONICAL_COLLEGES, ALL_CAMPUSES_LABEL } from './constants';
 
 export const COLLEGES = [
-  'All Campuses',
-  'IGDTUW',
-  'NSUT',
-  'DTU',
-  'IIT Delhi',
-  'IIIT Delhi',
-  'Jamia Millia Islamia',
-  'BITS Pilani',
-  'NIT Delhi',
+  ALL_CAMPUSES_LABEL,
+  ...CANONICAL_COLLEGES,
 ];
 
 export interface UserProfile {

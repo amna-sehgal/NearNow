@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server';
 import { UserProfile, ProjectFull } from '@/lib/mock';
+import { CANONICAL_COLLEGES, ALL_CAMPUSES_LABEL } from '@/lib/constants';
 
 export interface CampusStats {
   college: string;
@@ -71,20 +72,97 @@ const MOCK_CAMPUS_EVENTS: CampusEvent[] = [
   },
 ];
 
-export async function fetchCampusStats(college: string = 'All Campuses'): Promise<CampusStats> {
+/**
+ * Escapes characters with special meaning in SQL ILIKE patterns to guarantee exact case-insensitive matches.
+ */
+function escapeIlike(str: string): string {
+  return str.replace(/[\\%_]/g, '\\$&');
+}
+
+/**
+ * Dynamically fetches all available colleges:
+ * - "All Campuses"
+ * - Canonical/common colleges
+ * - Distinct non-empty colleges present in profiles or projects in the database
+ * Deduplicated case-insensitively while preserving canonical casing.
+ */
+export async function fetchAvailableColleges(): Promise<string[]> {
+  try {
+    const supabase = await createClient();
+
+    const [profilesRes, projectsRes] = await Promise.all([
+      supabase.from('profiles').select('college').not('college', 'is', null),
+      supabase.from('projects').select('college').not('college', 'is', null),
+    ]);
+
+    const collegeMap = new Map<string, string>(); // lowercased -> formatted display name
+
+    // 1. Seed canonical colleges
+    for (const c of CANONICAL_COLLEGES) {
+      const trimmed = c.trim();
+      if (trimmed) {
+        collegeMap.set(trimmed.toLowerCase(), trimmed);
+      }
+    }
+
+    // 2. Merge distinct non-empty colleges from profiles
+    if (!profilesRes.error && profilesRes.data) {
+      for (const row of profilesRes.data) {
+        const col = typeof row.college === 'string' ? row.college.trim() : '';
+        if (col && col.toLowerCase() !== 'other' && col.toLowerCase() !== 'all campuses') {
+          const lower = col.toLowerCase();
+          if (!collegeMap.has(lower)) {
+            collegeMap.set(lower, col);
+          }
+        }
+      }
+    }
+
+    // 3. Merge distinct non-empty colleges from projects
+    if (!projectsRes.error && projectsRes.data) {
+      for (const row of projectsRes.data) {
+        const col = typeof row.college === 'string' ? row.college.trim() : '';
+        if (col && col.toLowerCase() !== 'other' && col.toLowerCase() !== 'all campuses') {
+          const lower = col.toLowerCase();
+          if (!collegeMap.has(lower)) {
+            collegeMap.set(lower, col);
+          }
+        }
+      }
+    }
+
+    const uniqueColleges = Array.from(collegeMap.values());
+    const canonicalSet = new Set(CANONICAL_COLLEGES.map(c => c.toLowerCase()));
+
+    const canonicalOrdered = (CANONICAL_COLLEGES as readonly string[]).filter(c =>
+      collegeMap.has(c.toLowerCase())
+    );
+
+    const customList = uniqueColleges
+      .filter(c => !canonicalSet.has(c.toLowerCase()))
+      .sort((a, b) => a.localeCompare(b));
+
+    return [ALL_CAMPUSES_LABEL, ...canonicalOrdered, ...customList];
+  } catch (err) {
+    console.error('[fetchAvailableColleges error]:', err);
+    return [ALL_CAMPUSES_LABEL, ...CANONICAL_COLLEGES];
+  }
+}
+
+export async function fetchCampusStats(college: string = ALL_CAMPUSES_LABEL): Promise<CampusStats> {
   try {
     const supabase = await createClient();
 
     let query = supabase.from('profiles').select('reputation, xp, college');
-    if (college !== 'All Campuses') {
-      query = query.ilike('college', `%${college}%`);
+    if (college !== ALL_CAMPUSES_LABEL) {
+      query = query.ilike('college', escapeIlike(college.trim()));
     }
 
     const { data: profiles, error: pErr } = await query;
 
     let projQuery = supabase.from('projects').select('id, college');
-    if (college !== 'All Campuses') {
-      projQuery = projQuery.ilike('college', `%${college}%`);
+    if (college !== ALL_CAMPUSES_LABEL) {
+      projQuery = projQuery.ilike('college', escapeIlike(college.trim()));
     }
 
     const { data: projects } = await projQuery;
@@ -120,13 +198,13 @@ export async function fetchCampusStats(college: string = 'All Campuses'): Promis
   };
 }
 
-export async function fetchCampusBuilders(college: string = 'All Campuses'): Promise<UserProfile[]> {
+export async function fetchCampusBuilders(college: string = ALL_CAMPUSES_LABEL): Promise<UserProfile[]> {
   try {
     const supabase = await createClient();
 
     let query = supabase.from('profiles').select('*').order('reputation', { ascending: false });
-    if (college !== 'All Campuses') {
-      query = query.ilike('college', `%${college}%`);
+    if (college !== ALL_CAMPUSES_LABEL) {
+      query = query.ilike('college', escapeIlike(college.trim()));
     }
 
     const { data: rows, error } = await query;
@@ -167,7 +245,7 @@ export async function fetchCampusBuilders(college: string = 'All Campuses'): Pro
   return [];
 }
 
-export async function fetchCampusProjects(college: string = 'All Campuses'): Promise<ProjectFull[]> {
+export async function fetchCampusProjects(college: string = ALL_CAMPUSES_LABEL): Promise<ProjectFull[]> {
   try {
     const supabase = await createClient();
     let query = supabase
@@ -178,8 +256,8 @@ export async function fetchCampusProjects(college: string = 'All Campuses'): Pro
       `)
       .order('created_at', { ascending: false });
 
-    if (college !== 'All Campuses') {
-      query = query.ilike('college', `%${college}%`);
+    if (college !== ALL_CAMPUSES_LABEL) {
+      query = query.ilike('college', escapeIlike(college.trim()));
     }
 
     const { data, error } = await query;
@@ -197,7 +275,7 @@ export async function fetchCampusProjects(college: string = 'All Campuses'): Pro
           status: row.status || 'building',
           openRoles: row.open_roles || [],
           members: row.members || [],
-          college: ownerProfile?.college || row.college || 'College',
+          college: row.college || ownerProfile?.college || 'College',
           githubUrl: row.github_url || undefined,
           liveUrl: row.live_url || undefined,
           tasks: row.tasks || [],
@@ -216,7 +294,8 @@ export async function fetchCampusProjects(college: string = 'All Campuses'): Pro
   return [];
 }
 
-export async function fetchCampusEvents(college: string = 'All Campuses'): Promise<CampusEvent[]> {
-  if (college === 'All Campuses') return MOCK_CAMPUS_EVENTS;
-  return MOCK_CAMPUS_EVENTS.filter(e => e.college.toLowerCase().includes(college.toLowerCase()));
+export async function fetchCampusEvents(college: string = ALL_CAMPUSES_LABEL): Promise<CampusEvent[]> {
+  if (college === ALL_CAMPUSES_LABEL) return MOCK_CAMPUS_EVENTS;
+  const targetLower = college.toLowerCase().trim();
+  return MOCK_CAMPUS_EVENTS.filter(e => e.college.toLowerCase().trim() === targetLower);
 }
