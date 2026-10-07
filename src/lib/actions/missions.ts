@@ -1,6 +1,6 @@
 'use server';
 
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
 
 export interface Mission {
@@ -111,6 +111,7 @@ export async function fetchMissions(category?: string): Promise<Mission[]> {
       }));
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     return rows.map((r: any) => ({
       id: r.id,
       title: r.title,
@@ -207,58 +208,24 @@ export async function completeMissionAction(payload: {
       return { error: 'Mission not found.' };
     }
 
-    // 4. Server-Side Duplicate Completion Check (HARDENED SECURITY)
-    const { data: existingCompletion } = await supabase
-      .from('user_missions')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('mission_id', payload.missionId)
-      .maybeSingle();
-
-    if (existingCompletion) {
-      return { error: 'You have already completed this mission.' };
-    }
-
-    // 5. Insert Completion Record into Database
-    const { error: insertError } = await supabase
-      .from('user_missions')
-      .insert({
-        user_id: user.id,
-        mission_id: payload.missionId,
-        status: 'completed',
-        submission_url: validUrl,
-        completed_at: new Date().toISOString(),
-      });
-
-    if (insertError) {
-      if (insertError.code === '23505') { // Unique constraint violation
-        return { error: 'You have already completed this mission.' };
-      }
-      console.error('[completeMissionAction Insert Error]:', insertError);
-      return { error: insertError.message };
-    }
-
-    // 6. Atomic XP Update via Database RPC (or atomic SQL fallback)
-    const { error: rpcError } = await supabase.rpc('increment_user_xp', {
+    // 4. Atomic Domain RPC via Admin Client (handles user_missions, xp, and xp_logs atomically)
+    const adminSupabase = await createAdminClient();
+    const { data: rpcRes, error: rpcError } = await adminSupabase.rpc('complete_mission_with_xp', {
       user_id_input: user.id,
-      xp_amount: mission.xp,
+      mission_id_input: payload.missionId,
+      submission_url_input: validUrl,
     });
 
     if (rpcError) {
-      // Fallback if RPC function is not installed in database instance
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('xp')
-        .eq('id', user.id)
-        .single();
-      const currentXp = profile?.xp || 0;
-      await supabase
-        .from('profiles')
-        .update({ xp: currentXp + mission.xp })
-        .eq('id', user.id);
+      console.error('[completeMissionAction RPC Error]:', rpcError);
+      return { error: rpcError.message };
     }
 
-    // 7. Create Activity Feed Post with Self-Reported Label
+    if (rpcRes && !rpcRes.success && rpcRes.already_completed) {
+      return { error: rpcRes.message || 'You have already completed this mission.' };
+    }
+
+    // 5. Create Activity Feed Post with Self-Reported Label
     await supabase.from('activities').insert({
       user_id: user.id,
       type: 'completed_mission',
@@ -272,8 +239,9 @@ export async function completeMissionAction(payload: {
     revalidatePath('/profile');
     revalidatePath('/feed');
 
-    return { success: true, xpEarned: mission.xp };
-  } catch (err: any) {
-    return { error: err.message || 'Failed to submit mission completion.' };
+    return { success: true, xpEarned: rpcRes?.xp_awarded ?? mission.xp };
+  } catch (err: unknown) {
+    const errorMsg = err instanceof Error ? err.message : 'Failed to submit mission completion.';
+    return { error: errorMsg };
   }
 }

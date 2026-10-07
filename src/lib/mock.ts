@@ -1,5 +1,11 @@
 // src/lib/mock.ts
 import { Activity, ACTIVITIES } from './data';
+import { CANONICAL_COLLEGES, ALL_CAMPUSES_LABEL } from './constants';
+
+export const COLLEGES = [
+  ALL_CAMPUSES_LABEL,
+  ...CANONICAL_COLLEGES,
+];
 
 export interface UserProfile {
   handle: string;

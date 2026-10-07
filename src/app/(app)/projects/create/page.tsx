@@ -4,8 +4,9 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, ArrowRight, Plus, X, Check } from 'lucide-react';
 import Tag from '@/components/ui/Tag';
-import { createClient } from '@/lib/supabase/client';
 import { useProfile } from '@/lib/supabase/hooks';
+
+import { createProjectAction } from '@/lib/actions/projects';
 
 const STEPS = ['Idea', 'Stack', 'Team', 'Details'];
 const CATEGORIES = ['EdTech', 'HealthTech', 'ClimaTech', 'Campus Life', 'FinTech', 'AI / ML', 'Open Source', 'Other'];
@@ -14,7 +15,7 @@ const ALL_ROLES = ['Frontend Developer', 'Backend Developer', 'Full Stack Develo
 
 export default function CreateProjectPage() {
   const router = useRouter();
-  const { profile, user } = useProfile();
+  useProfile();
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -26,7 +27,7 @@ export default function CreateProjectPage() {
   });
 
   const canNext = [
-    form.name.trim().length > 2 && form.tagline.trim().length > 5 && !!form.category,
+    form.name.trim().length >= 3 && form.tagline.trim().length >= 6 && form.category !== '',
     form.stack.length > 0,
     true,
     form.description.trim().length > 20,
@@ -37,67 +38,29 @@ export default function CreateProjectPage() {
   const addRole = (r: string) => { if (!form.roles.find(x => x.role === r)) setForm({ ...form, roles: [...form.roles, { role: r, skills: [] }] }); };
   const removeRole = (r: string) => setForm({ ...form, roles: form.roles.filter(x => x.role !== r) });
 
-const handleSubmit = async () => {
-  setSubmitting(true);
-  setError('');
-  const supabase = createClient();
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    setError('');
 
-  // Get user + profile directly
-  const { data: { user: currentUser } } = await supabase.auth.getUser();
-  if (!currentUser) { setError('Not logged in. Please refresh.'); setSubmitting(false); return; }
-
-  const { data: currentProfile } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', currentUser.id)
-    .single();
-
-  if (!currentProfile) { setError('Profile not found. Please complete your profile first.'); setSubmitting(false); return; }
-
-  const openRoles = form.roles.map(r => ({ role: r.role, skills: r.skills, filled: false }));
-  const members = [{
-    handle: currentProfile.handle,
-    name: currentProfile.name,
-    avatar: currentProfile.avatar || currentProfile.name?.slice(0,2).toUpperCase() || 'NN',
-    role: 'Founder'
-  }];
-
-  const { data: projectData, error: projectError } = await supabase
-    .from('projects')
-    .insert({
-      owner_id: currentUser.id,
+    const res = await createProjectAction({
       name: form.name.trim(),
       tagline: form.tagline.trim(),
       description: form.description.trim(),
       category: form.category,
       stack: form.stack,
-      open_roles: openRoles,
-      members,
-      tasks: [],
-      college: currentProfile.college || '',
-      github_url: form.github.trim() || null,
-      live_url: form.live.trim() || null,
-      xp_reward: 150,
-      status: 'building',
-    })
-    .select()
-    .single();
+      roles: form.roles,
+      githubUrl: form.github.trim() || undefined,
+      liveUrl: form.live.trim() || undefined,
+    });
 
-  if (projectError) { setError(projectError.message); setSubmitting(false); return; }
+    if (res.error) {
+      setError(res.error);
+      setSubmitting(false);
+      return;
+    }
 
-  await supabase.from('activities').insert({
-    user_id: currentUser.id,
-    type: 'started_project',
-    content: `started a new project: ${form.name}`,
-    meta: form.tagline,
-    tags: form.stack.slice(0, 3),
-    xp: 50,
-  });
-
-  await supabase.rpc('increment_user_xp', { user_id_input: currentUser.id, xp_amount: 50 });
-
-  router.push(`/projects/${projectData.id}`);
-};
+    router.push('/projects');
+  };
   return (
     <div className="min-h-screen" style={{ background: '#0D0D0F' }}>
       <header className="sticky top-0 z-20 border-b px-4 md:px-8 h-14 flex items-center gap-4"

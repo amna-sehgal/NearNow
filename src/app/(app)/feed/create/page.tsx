@@ -19,7 +19,7 @@ const SUGGESTED_TAGS = ['React', 'Node.js', 'Python', 'Next.js', 'MongoDB', 'Typ
 
 export default function CreatePost() {
   const router = useRouter();
-  const { profile, user } = useProfile();
+  useProfile();
   const [selectedType, setSelectedType] = useState('');
   const [content, setContent] = useState('');
   const [meta, setMeta] = useState('');
@@ -53,10 +53,6 @@ const handleSubmit = async () => {
   });
 
   if (activityError) { setError(activityError.message); setSubmitting(false); return; }
-
-  if (xpEarned > 0) {
-    await supabase.rpc('increment_user_xp', { user_id_input: currentUser.id, xp_amount: xpEarned });
-  }
 
   router.push('/feed');
 };

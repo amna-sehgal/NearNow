@@ -2,13 +2,15 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Activity, Layers, Zap, Search, ChevronRight, LogOut, User, Users, Bell } from 'lucide-react';
+import { Activity, Layers, Zap, Search, ChevronRight, LogOut, User, Users, Bell, MapPin, MessageSquare } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
 import { useAuth } from '@/components/providers/AuthProvider';
 
 const NAV = [
   { href: '/feed', icon: Activity, label: 'Feed' },
   { href: '/projects', icon: Layers, label: 'Projects' },
+  { href: '/campus', icon: MapPin, label: 'Campus Map' },
+  { href: '/communities', icon: MessageSquare, label: 'Communities' },
   { href: '/match', icon: Users, label: 'Match' },
   { href: '/missions', icon: Zap, label: 'Missions' },
   { href: '/search', icon: Search, label: 'Search' },
@@ -106,9 +108,11 @@ export default function Sidebar({ userId }: { userId: string }) {
           <Bell size={16} />
           Notifications
           {unreadCount > 0 && (
-            <span className="ml-auto font-mono text-[9px] px-1.5 py-0.5 rounded-full"
-              style={{ background: 'rgba(200,241,53,0.15)', color: '#C8F135' }}>
-              {unreadCount}
+            <span
+              className="ml-auto font-mono text-[9px] min-w-[18px] h-[18px] flex items-center justify-center rounded-full"
+              style={{ background: '#ef4444', color: '#ffffff', fontWeight: 700 }}
+            >
+              {unreadCount > 9 ? '9+' : unreadCount}
             </span>
           )}
         </Link>

@@ -3,15 +3,16 @@ import { use, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useProfile } from '@/lib/supabase/hooks';
+import { fetchUserBadges, fetchXpHistory, BadgeItem, XpLogItem } from '@/lib/actions/reputation';
 import Avatar from '@/components/ui/Avatar';
 import Tag from '@/components/ui/Tag';
 import ActivityCard from '@/components/ui/ActivityCard';
-import { Globe, MapPin, GraduationCap, Edit3, Star, ExternalLink } from 'lucide-react';
+import { Globe, MapPin, GraduationCap, Edit3, Star, ExternalLink, Award, History, X, Zap } from 'lucide-react';
 
 function GithubIcon({ size = 12 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+      <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z" />
     </svg>
   );
 }
@@ -19,7 +20,7 @@ function GithubIcon({ size = 12 }: { size?: number }) {
 function LinkedinIcon({ size = 12 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 0 1-2.063-2.065 2.064 2.064 0 1 1 2.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
     </svg>
   );
 }
@@ -36,9 +37,17 @@ function StatPill({ value, label }: { value: number; label: string }) {
 export default function ProfilePage({ params }: { params: Promise<{ handle: string }> }) {
   const { handle } = use(params);
   const { profile: myProfile, user } = useProfile();
+  const [connStatus, setConnStatus] = useState<'none' | 'pending_sent' | 'pending_received' | 'connected'>('none');
+  const [connecting, setConnecting] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [profile, setProfile] = useState<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [projects, setProjects] = useState<any[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [activities, setActivities] = useState<any[]>([]);
+  const [badges, setBadges] = useState<BadgeItem[]>([]);
+  const [xpLogs, setXpLogs] = useState<XpLogItem[]>([]);
+  const [showXpModal, setShowXpModal] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
 
   const isMe = myProfile?.handle === handle;
@@ -56,13 +65,19 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
       if (!profileData) { setLoading(false); return; }
       setProfile(profileData);
 
+      const [bData, xData] = await Promise.all([
+        fetchUserBadges(handle),
+        fetchXpHistory(profileData.id),
+      ]);
+      setBadges(bData);
+      setXpLogs(xData);
+
       const { data: projectData } = await supabase
         .from('projects')
         .select('*')
         .contains('members', JSON.stringify([{ handle }]))
         .order('created_at', { ascending: false });
 
-      // Also fetch owned projects
       const { data: ownedProjects } = await supabase
         .from('projects')
         .select('*')
@@ -86,6 +101,56 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
     fetch();
   }, [handle]);
 
+  // Check connection status separately so it updates when user changes
+  useEffect(() => {
+    const checkConn = async () => {
+      if (!user || isMe || !profile) return;
+      const supabase = createClient();
+      const { data } = await supabase
+        .from('connections')
+        .select('sender_id, receiver_id, status')
+        .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+        .or(`sender_id.eq.${profile.id},receiver_id.eq.${profile.id}`)
+        .limit(10);
+
+      const conn = (data || []).find((c: any) =>
+        (c.sender_id === user.id && c.receiver_id === profile.id) ||
+        (c.sender_id === profile.id && c.receiver_id === user.id)
+      );
+
+      if (!conn) { setConnStatus('none'); return; }
+      if (conn.status === 'connected') { setConnStatus('connected'); return; }
+      if (conn.status === 'pending') {
+        setConnStatus(conn.sender_id === user.id ? 'pending_sent' : 'pending_received');
+      }
+    };
+    checkConn();
+  }, [user, profile, isMe]);
+
+  const handleConnect = async () => {
+    if (!user || !myProfile || !profile) return;
+    setConnecting(true);
+    const supabase = createClient();
+
+    await supabase.from('connections').insert({
+      sender_id: user.id,
+      receiver_id: profile.id,
+      status: 'pending',
+    });
+
+    await supabase.from('notifications').insert({
+      user_id: profile.id,
+      type: 'connection_request',
+      title: 'New connection request',
+      body: `${myProfile.name} wants to connect with you`,
+      link: `/profile/${myProfile.handle}`,
+      read: false,
+    });
+
+    setConnStatus('pending_sent');
+    setConnecting(false);
+  };
+
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: '#0D0D0F' }}>
       <div className="font-mono text-sm" style={{ color: '#7A7A8C' }}>Loading profile...</div>
@@ -101,14 +166,15 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
     </div>
   );
 
-  const xpPercent = Math.min((profile.xp / profile.xp_to_next) * 100, 100);
+  const xpPercent = Math.min(((profile?.xp || 0) / (profile?.xp_to_next || 100)) * 100, 100);
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const toCard = (a: any) => ({
     id: a.id, type: a.type,
     user: { name: profile.name, handle: profile.handle, avatar: profile.avatar || 'NN', college: profile.college || '' },
     content: a.content, meta: a.meta, tags: a.tags || [], xp: a.xp,
     timestamp: new Date(a.created_at).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }),
-    isFresh: Date.now() - new Date(a.created_at).getTime() < 1000 * 60 * 30,
+    isFresh: false,
   });
 
   return (
@@ -133,7 +199,7 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
         {/* Identity card */}
         <div className="rounded-2xl border p-6" style={{ background: '#141416', borderColor: '#2A2A30' }}>
           <div className="flex items-start gap-4 mb-5">
-            <Avatar initials={profile.avatar || profile.name?.slice(0,2).toUpperCase() || 'NN'} size="lg" glow />
+            <Avatar initials={profile.avatar || profile.name?.slice(0, 2).toUpperCase() || 'NN'} size="lg" glow />
             <div className="flex-1">
               <h1 className="font-display font-bold text-xl" style={{ color: '#E8E8F0' }}>{profile.name}</h1>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
@@ -155,10 +221,19 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
 
           {profile.bio && <p className="font-body text-sm leading-relaxed mb-5" style={{ color: '#E8E8F0' }}>{profile.bio}</p>}
 
-          {/* XP bar */}
+          {/* XP bar with History trigger */}
           <div className="mb-5">
-            <div className="flex justify-between mb-1.5">
-              <span className="font-mono text-xs" style={{ color: '#7A7A8C' }}>XP Progress</span>
+            <div className="flex justify-between items-center mb-1.5">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs" style={{ color: '#7A7A8C' }}>XP Progress</span>
+                <button
+                  onClick={() => setShowXpModal(true)}
+                  className="flex items-center gap-1 font-mono text-[10px] px-2 py-0.5 rounded-full border transition-all"
+                  style={{ background: '#1C1C20', borderColor: '#2A2A30', color: '#C8F135' }}
+                >
+                  <History size={10} /> XP History
+                </button>
+              </div>
               <span className="font-mono text-xs" style={{ color: '#C8F135' }}>{profile.xp} / {profile.xp_to_next}</span>
             </div>
             <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#1C1C20' }}>
@@ -201,12 +276,68 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
               ><Globe size={12} /> Portfolio</a>
             )}
             {!isMe && (
-              <button className="ml-auto flex items-center gap-1.5 font-display font-medium text-xs px-4 py-1.5 rounded-lg transition-all"
-                style={{ background: '#C8F135', color: '#0D0D0F' }}
-                onMouseEnter={e => { e.currentTarget.style.background = '#d4f547'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = '#C8F135'; }}
-              >Connect</button>
+              <>
+                {connStatus === 'connected' && (
+                  <span className="ml-auto flex items-center gap-1.5 font-mono text-xs px-4 py-1.5 rounded-lg"
+                    style={{ background: 'rgba(200,241,53,0.08)', color: '#C8F135', border: '1px solid rgba(200,241,53,0.2)' }}>
+                    ✓ Connected
+                  </span>
+                )}
+                {connStatus === 'pending_sent' && (
+                  <span className="ml-auto flex items-center gap-1.5 font-mono text-xs px-4 py-1.5 rounded-lg"
+                    style={{ background: '#1C1C20', color: '#7A7A8C', border: '1px solid #2A2A30' }}>
+                    Requested
+                  </span>
+                )}
+                {connStatus === 'pending_received' && (
+                  <span className="ml-auto flex items-center gap-1.5 font-mono text-xs px-4 py-1.5 rounded-lg"
+                    style={{ background: 'rgba(200,241,53,0.06)', color: '#9BB82A', border: '1px solid rgba(200,241,53,0.15)' }}>
+                    Wants to connect
+                  </span>
+                )}
+                {connStatus === 'none' && (
+                  <button
+                    onClick={handleConnect}
+                    disabled={connecting}
+                    className="ml-auto flex items-center gap-1.5 font-display font-medium text-xs px-4 py-1.5 rounded-lg transition-all"
+                    style={{ background: connecting ? '#9BB82A' : '#C8F135', color: '#0D0D0F' }}
+                    onMouseEnter={e => { if (!connecting) e.currentTarget.style.background = '#d4f547'; }}
+                    onMouseLeave={e => { if (!connecting) e.currentTarget.style.background = '#C8F135'; }}
+                  >
+                    {connecting ? 'Sending...' : 'Connect'}
+                  </button>
+                )}
+              </>
             )}
+          </div>
+        </div>
+
+        {/* Dynamic Reputation Badges Section */}
+        <div className="rounded-2xl border p-5" style={{ background: '#141416', borderColor: '#2A2A30' }}>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-mono text-xs flex items-center gap-1.5" style={{ color: '#7A7A8C' }}>
+              <Award size={14} style={{ color: '#C8F135' }} /> REPUTATION BADGES
+            </h2>
+            <span className="font-mono text-[10px]" style={{ color: '#C8F135' }}>{badges.length} Unlocked</span>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {badges.map(b => (
+              <div
+                key={b.label}
+                className="flex items-center gap-3 p-3 rounded-xl border"
+                style={{ background: '#1C1C20', borderColor: '#2A2A30' }}
+              >
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg border flex-shrink-0"
+                  style={{ background: 'rgba(200,241,53,0.08)', borderColor: 'rgba(200,241,53,0.2)' }}>
+                  {b.icon}
+                </div>
+                <div className="min-w-0">
+                  <div className="font-display font-medium text-xs truncate" style={{ color: '#E8E8F0' }}>{b.label}</div>
+                  <div className="font-body text-[10px] truncate" style={{ color: '#7A7A8C' }}>{b.description}</div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
@@ -279,6 +410,42 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
           </div>
         )}
       </main>
+
+      {/* XP History Modal */}
+      {showXpModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(8px)' }}>
+          <div className="w-full max-w-md rounded-2xl border p-6 flex flex-col gap-4 relative" style={{ background: '#141416', borderColor: '#2A2A30' }}>
+            <button onClick={() => setShowXpModal(false)} className="absolute right-4 top-4" style={{ color: '#7A7A8C' }}>
+              <X size={18} />
+            </button>
+
+            <div className="flex items-center gap-2">
+              <Zap size={18} style={{ color: '#C8F135' }} />
+              <h3 className="font-display font-bold text-lg" style={{ color: '#E8E8F0' }}>XP History Log</h3>
+            </div>
+
+            <div className="flex flex-col gap-3 max-h-80 overflow-y-auto pr-1">
+              {xpLogs.length === 0 ? (
+                <p className="font-body text-xs text-center py-6" style={{ color: '#7A7A8C' }}>No XP history recorded yet.</p>
+              ) : (
+                xpLogs.map(log => (
+                  <div key={log.id} className="p-3 rounded-xl border flex items-center justify-between gap-3"
+                    style={{ background: '#1C1C20', borderColor: '#2A2A30' }}>
+                    <div>
+                      <div className="font-body text-xs" style={{ color: '#E8E8F0' }}>{log.reason}</div>
+                      <div className="font-mono text-[10px] mt-0.5" style={{ color: '#7A7A8C' }}>{log.createdAt}</div>
+                    </div>
+                    <span className="font-mono font-bold text-xs px-2.5 py-1 rounded-full"
+                      style={{ background: 'rgba(200,241,53,0.12)', color: '#C8F135' }}>
+                      +{log.amount} XP
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

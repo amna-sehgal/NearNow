@@ -11,11 +11,13 @@ export default function MobileNav() {
   const profileHref = user?.handle ? `/profile/${user.handle}` : '/auth';
 
   const NAV = [
-    { href: '/feed',                                  icon: Activity, label: 'Feed'    },
-    { href: '/projects',                              icon: Layers,   label: 'Projects'},
-    { href: '/match',                                 icon: Users,    label: 'Match'   },
-    { href: '/notifications',                         icon: Bell,     label: 'Alerts', badge: unread },
-    { href: handle ? `/profile/${handle}` : '/feed',  icon: User,     label: 'Profile' },
+    { href: '/feed',                                  icon: Activity,      label: 'Feed'        },
+    { href: '/projects',                              icon: Layers,        label: 'Projects'    },
+    { href: '/campus',                                icon: MapPin,        label: 'Campus'      },
+    { href: '/communities',                           icon: MessageSquare, label: 'Communities' },
+    { href: '/match',                                 icon: Users,         label: 'Match'       },
+    { href: '/notifications',                         icon: Bell,          label: 'Alerts', badge: unread },
+    { href: handle ? `/profile/${handle}` : '/feed',  icon: User,          label: 'Profile'     },
   ];
 
   return (

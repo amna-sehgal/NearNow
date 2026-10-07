@@ -1,9 +1,10 @@
 'use client';
 import { useState, Suspense } from 'react';
 import Link from 'next/link';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import CollegeSelect from '@/components/ui/CollegeSelect';
 
 function GithubIcon() {
   return (
@@ -14,13 +15,14 @@ function GithubIcon() {
 }
 
 function AuthForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const defaultMode = searchParams.get('mode') === 'join' ? 'join' : 'signin';
   const [mode, setMode] = useState<'signin' | 'join'>(defaultMode);
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [isCollegeValid, setIsCollegeValid] = useState(true);
   const [form, setForm] = useState({
     name: '', email: '', college: '', handle: '', password: '',
   });
@@ -28,37 +30,47 @@ function AuthForm() {
   const handleAuth = async () => {
     setLoading(true);
     setError('');
+    setSuccess('');
     const supabase = createClient();
 
     if (mode === 'join') {
-      // Sign up
+      if (!isCollegeValid || form.college === 'Other') {
+        setError('Please enter your college name or select one from the list.');
+        setLoading(false);
+        return;
+      }
+
+      const handle = form.handle || form.email.split('@')[0].replace(/[^a-z0-9_]/gi, '_').toLowerCase();
+      const avatar = form.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) || 'NN';
+      const normalizedCollege = form.college.trim();
+
+      // Sign up with user metadata - automatically processed by Supabase auth trigger
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: form.email,
         password: form.password,
+        options: {
+          data: {
+            name: form.name,
+            handle,
+            avatar,
+            college: normalizedCollege,
+          },
+        },
       });
       if (signUpError) { setError(signUpError.message); setLoading(false); return; }
 
-      if (data.user) {
-        // Create profile
-        const handle = form.handle || form.email.split('@')[0].replace(/[^a-z0-9_]/gi, '_').toLowerCase();
-        const { error: profileError } = await supabase.from('profiles').insert({
-          id: data.user.id,
-          name: form.name,
-          handle,
-          avatar: form.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2),
-          college: form.college,
-        });
-        if (profileError) { setError(profileError.message); setLoading(false); return; }
-
-        // Insert welcome activity
-        await supabase.from('activities').insert({
-          user_id: data.user.id,
-          type: 'joined_platform',
-          content: 'joined Near Now',
-          tags: [],
-        });
+      // When email confirmation is required, session is null until confirmed
+      if (data.user && !data.session) {
+        setSuccess('Account created! Please check your email to confirm your account, then sign in.');
+        setLoading(false);
+        return;
       }
-      router.push('/feed');
+
+      // Hard navigation ensures session cookies are propagated to server components
+      // and eliminates router cache / in-flight navigation conflicts
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+      window.location.href = '/feed';
+      return;
     } else {
       // Sign in
       const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -66,7 +78,11 @@ function AuthForm() {
         password: form.password,
       });
       if (signInError) { setError(signInError.message); setLoading(false); return; }
-      router.push('/feed');
+      // Hard navigation ensures session cookies are propagated to server components
+      // and eliminates router cache / in-flight navigation conflicts
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+      window.location.href = '/feed';
+      return;
     }
     setLoading(false);
   };
@@ -95,7 +111,7 @@ function AuthForm() {
           {/* Toggle */}
           <div className="flex p-1 rounded-xl mb-8" style={{ background: '#141416', border: '1px solid #2A2A30' }}>
             {(['signin', 'join'] as const).map(m => (
-              <button key={m} onClick={() => { setMode(m); setError(''); }}
+              <button key={m} onClick={() => { setMode(m); setError(''); setSuccess(''); }}
                 className="flex-1 h-9 rounded-lg font-display font-medium text-sm transition-all duration-200"
                 style={{ background: mode === m ? '#1C1C20' : 'transparent', color: mode === m ? '#E8E8F0' : '#7A7A8C', border: mode === m ? '1px solid #2A2A30' : '1px solid transparent' }}
               >
@@ -120,11 +136,35 @@ function AuthForm() {
             </div>
           )}
 
+          {/* Success / Email confirmation notice */}
+          {success && (
+            <div className="mb-4 px-4 py-3 rounded-xl font-body text-sm" style={{ background: 'rgba(200,241,53,0.08)', border: '1px solid rgba(200,241,53,0.25)', color: '#C8F135' }}>
+              {success}
+            </div>
+          )}
+
           {/* GitHub OAuth */}
           <button
+            type="button"
             onClick={async () => {
-              const supabase = createClient();
-              await supabase.auth.signInWithOAuth({ provider: 'github', options: { redirectTo: `${window.location.origin}/feed` } });
+              try {
+                setError('');
+                const supabase = createClient();
+                const { data, error } = await supabase.auth.signInWithOAuth({
+                  provider: 'github',
+                  options: { redirectTo: `${window.location.origin}/feed` },
+                });
+                if (error) {
+                  setError(error.message);
+                  console.error('[GitHub OAuth Error]:', error);
+                } else if (data?.url) {
+                  window.location.href = data.url;
+                }
+              } catch (err: unknown) {
+                const msg = err instanceof Error ? err.message : 'Failed to initiate GitHub login.';
+                setError(msg);
+                console.error('[GitHub OAuth Exception]:', err);
+              }
             }}
             className="w-full h-10 flex items-center justify-center gap-2.5 rounded-xl font-body text-sm mb-5 transition-all duration-200"
             style={{ background: '#1C1C20', border: '1px solid #2A2A30', color: '#E8E8F0' }}
@@ -152,7 +192,11 @@ function AuthForm() {
                   <Input type="text" value={form.handle} onChange={v => setForm({ ...form, handle: v.toLowerCase().replace(/\s/g, '_') })} placeholder="amna_s" />
                 </Field>
                 <Field label="College">
-                  <Input type="text" value={form.college} onChange={v => setForm({ ...form, college: v })} placeholder="IGDTUW, DTU, NSUT..." />
+                  <CollegeSelect
+                    value={form.college}
+                    onChange={v => setForm({ ...form, college: v })}
+                    onOtherValidityChange={setIsCollegeValid}
+                  />
                 </Field>
               </>
             )}
