@@ -4,12 +4,12 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, X, Check } from 'lucide-react';
 import Avatar from '@/components/ui/Avatar';
+import CollegeSelect from '@/components/ui/CollegeSelect';
 import { createClient } from '@/lib/supabase/client';
 import { useProfile } from '@/lib/supabase/hooks';
 
 const SUGGESTED_SKILLS = ['React', 'Next.js', 'TypeScript', 'Node.js', 'Python', 'MongoDB', 'PostgreSQL', 'Docker', 'Figma', 'TailwindCSS', 'FastAPI', 'Flutter', 'TensorFlow', 'AWS', 'Redis'];
 const SUGGESTED_ROLES = ['Frontend Developer', 'Backend Developer', 'Full Stack Developer', 'UI/UX Designer', 'ML Engineer', 'DevOps Engineer', 'Mobile Developer', 'Data Scientist', 'Product Manager'];
-const COLLEGES = ['IGDTUW', 'DTU', 'NSUT', 'IIIT Delhi', 'IIT Delhi', 'Jamia', 'IP University', 'Amity', 'BIT Mesra', 'NIT Trichy', 'VIT', 'BITS Pilani'];
 
 export default function EditProfilePage() {
   const router = useRouter();
@@ -17,6 +17,7 @@ export default function EditProfilePage() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
+  const [isCollegeValid, setIsCollegeValid] = useState(true);
   const [form, setForm] = useState({ name: '', bio: '', college: '', year: '', location: '', github: '', linkedin: '', portfolio: '' });
   const [skills, setSkills] = useState<string[]>([]);
   const [lookingFor, setLookingFor] = useState<string[]>([]);
@@ -24,6 +25,7 @@ export default function EditProfilePage() {
 
   useEffect(() => {
     if (profile) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setForm({ name: profile.name || '', bio: profile.bio || '', college: profile.college || '', year: profile.year || '', location: profile.location || '', github: profile.github || '', linkedin: profile.linkedin || '', portfolio: profile.portfolio || '' });
       setSkills(profile.skills || []);
       setLookingFor(profile.looking_for || []);
@@ -36,13 +38,25 @@ export default function EditProfilePage() {
 
   const handleSave = async () => {
     if (!user) return;
+    if (!isCollegeValid || form.college === 'Other') {
+      setError('Please enter your college name.');
+      return;
+    }
     setSaving(true);
     setError('');
     const supabase = createClient();
 
+    const normalizedCollege = form.college.trim();
+
     const { error: updateError } = await supabase
       .from('profiles')
-      .update({ ...form, skills, looking_for: lookingFor, updated_at: new Date().toISOString() })
+      .update({
+        ...form,
+        college: normalizedCollege,
+        skills,
+        looking_for: lookingFor,
+        updated_at: new Date().toISOString()
+      })
       .eq('id', user.id);
 
     if (updateError) { setError(updateError.message); setSaving(false); return; }
@@ -106,13 +120,11 @@ export default function EditProfilePage() {
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="College">
-              <select value={form.college} onChange={e => setForm({...form, college: e.target.value})}
-                className="w-full h-10 px-3 rounded-xl font-body text-sm outline-none transition-all appearance-none"
-                style={{ background: '#141416', border: '1px solid #2A2A30', color: '#E8E8F0' }}
-              >
-                <option value="">Select college</option>
-                {COLLEGES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
+              <CollegeSelect
+                value={form.college}
+                onChange={c => setForm({ ...form, college: c })}
+                onOtherValidityChange={setIsCollegeValid}
+              />
             </Field>
             <Field label="Location"><Input value={form.location} onChange={v => setForm({...form, location: v})} placeholder="City" /></Field>
           </div>

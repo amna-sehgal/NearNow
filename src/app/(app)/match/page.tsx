@@ -5,6 +5,7 @@ import { useProfile } from '@/lib/supabase/hooks';
 import Avatar from '@/components/ui/Avatar';
 import Tag from '@/components/ui/Tag';
 import { MapPin, GraduationCap, Filter, Check, Clock } from 'lucide-react';
+import { CANONICAL_COLLEGES } from '@/lib/constants';
 
 function computeMatch(me: any, other: any): number {
   if (!me || !other) return 0;
@@ -32,7 +33,7 @@ type ConnStatus = 'none' | 'pending_sent' | 'pending_received' | 'connected';
 
 const ROLES = ['Frontend Developer', 'Backend Developer', 'Full Stack Developer', 'UI/UX Designer', 'ML Engineer', 'DevOps Engineer', 'Mobile Developer', 'Data Scientist'];
 const STACKS = ['React', 'Next.js', 'Node.js', 'Python', 'TypeScript', 'MongoDB', 'PostgreSQL', 'Flutter', 'Docker', 'TensorFlow', 'FastAPI'];
-const COLLEGES = ['IGDTUW', 'DTU', 'NSUT', 'IIIT Delhi', 'IIT Delhi', 'Jamia', 'IP University', 'Amity', 'VIT', 'BITS Pilani'];
+const COLLEGES = CANONICAL_COLLEGES;
 
 export default function MatchPage() {
   const { profile, user } = useProfile();

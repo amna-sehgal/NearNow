@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import CollegeSelect from '@/components/ui/CollegeSelect';
 
 function GithubIcon() {
   return (
@@ -21,6 +22,7 @@ function AuthForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [isCollegeValid, setIsCollegeValid] = useState(true);
   const [form, setForm] = useState({
     name: '', email: '', college: '', handle: '', password: '',
   });
@@ -32,8 +34,15 @@ function AuthForm() {
     const supabase = createClient();
 
     if (mode === 'join') {
+      if (!isCollegeValid || form.college === 'Other') {
+        setError('Please enter your college name or select one from the list.');
+        setLoading(false);
+        return;
+      }
+
       const handle = form.handle || form.email.split('@')[0].replace(/[^a-z0-9_]/gi, '_').toLowerCase();
       const avatar = form.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2) || 'NN';
+      const normalizedCollege = form.college.trim();
 
       // Sign up with user metadata - automatically processed by Supabase auth trigger
       const { data, error: signUpError } = await supabase.auth.signUp({
@@ -44,7 +53,7 @@ function AuthForm() {
             name: form.name,
             handle,
             avatar,
-            college: form.college,
+            college: normalizedCollege,
           },
         },
       });
@@ -183,7 +192,11 @@ function AuthForm() {
                   <Input type="text" value={form.handle} onChange={v => setForm({ ...form, handle: v.toLowerCase().replace(/\s/g, '_') })} placeholder="amna_s" />
                 </Field>
                 <Field label="College">
-                  <Input type="text" value={form.college} onChange={v => setForm({ ...form, college: v })} placeholder="IGDTUW, DTU, NSUT..." />
+                  <CollegeSelect
+                    value={form.college}
+                    onChange={v => setForm({ ...form, college: v })}
+                    onOtherValidityChange={setIsCollegeValid}
+                  />
                 </Field>
               </>
             )}
