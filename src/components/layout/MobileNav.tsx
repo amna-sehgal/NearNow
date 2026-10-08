@@ -4,24 +4,18 @@ import { usePathname } from 'next/navigation';
 import { Activity, Layers, Users, Bell, User, MapPin, MessageSquare } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useProfile } from '@/lib/supabase/hooks';
 
 export default function MobileNav() {
   const pathname = usePathname();
-  const [handle, setHandle] = useState<string | null>(null);
+  const { profile, user } = useProfile();
+  const handle = profile?.handle ?? null;
   const [unread, setUnread] = useState(0);
 
   useEffect(() => {
+    if (!user) return;
     const load = async () => {
       const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-      const { data } = await supabase
-        .from('profiles')
-        .select('handle')
-        .eq('id', user.id)
-        .single();
-      if (data) setHandle(data.handle);
-
       const { count } = await supabase
         .from('notifications')
         .select('*', { count: 'exact', head: true })
@@ -30,7 +24,7 @@ export default function MobileNav() {
       setUnread(count || 0);
     };
     load();
-  }, []);
+  }, [user]);
 
   const NAV = [
     { href: '/feed',                                  icon: Activity,      label: 'Feed'        },

@@ -5,6 +5,7 @@ import { Activity, Layers, Zap, Search, ChevronRight, LogOut, User, Users, Bell,
 import Avatar from '@/components/ui/Avatar';
 import { createClient } from '@/lib/supabase/client';
 import { useEffect, useState } from 'react';
+import { useProfile } from '@/lib/supabase/hooks';
 
 const NAV = [
   { href: '/feed', icon: Activity, label: 'Feed' },
@@ -18,21 +19,7 @@ const NAV = [
 export default function Sidebar({ userId }: { userId: string }) {
   const pathname = usePathname();
   const router = useRouter();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [profile, setProfile] = useState<any>(null);
-
-  useEffect(() => {
-    const load = async () => {
-      const supabase = createClient();
-      const { data } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-      setProfile(data);
-    };
-    if (userId) load();
-  }, [userId]);
+  const { profile } = useProfile();
 
   const handleSignOut = async () => {
     const supabase = createClient();
