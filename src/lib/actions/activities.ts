@@ -6,6 +6,8 @@ import { Activity, ACTIVITIES, formatRelativeTime } from '@/lib/data';
 export async function fetchActivities(options?: {
   filter?: string;
   search?: string;
+  userId?: string;
+  limit?: number;
 }): Promise<Activity[]> {
   try {
     const supabase = await createClient();
@@ -29,7 +31,11 @@ export async function fetchActivities(options?: {
         )
       `)
       .order('created_at', { ascending: false })
-      .limit(50);
+      .limit(options?.limit ?? 50);
+
+    if (options?.userId) {
+      query = query.eq('user_id', options.userId);
+    }
 
     if (options?.filter && options.filter !== 'all') {
       query = query.eq('type', options.filter);
@@ -43,6 +49,9 @@ export async function fetchActivities(options?: {
     const user = authData?.user;
 
     if (error || !data || data.length === 0) {
+      if (options?.userId) {
+        return [];
+      }
       // Fallback to local mock data filtered client-side if Supabase has no data or error
       const search = options?.search?.toLowerCase();
       return ACTIVITIES.filter(a => {
@@ -125,6 +134,9 @@ export async function fetchActivities(options?: {
 
     return mappedActivities;
   } catch {
+    if (options?.userId) {
+      return [];
+    }
     return ACTIVITIES;
   }
 }

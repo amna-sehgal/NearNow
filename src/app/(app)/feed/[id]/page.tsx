@@ -7,6 +7,7 @@ import ActivityCard from '@/components/ui/ActivityCard';
 import { Activity } from '@/lib/data';
 import { fetchActivityById, fetchActivities } from '@/lib/actions/activities';
 import { createClient } from '@/lib/supabase/client';
+import { useProfile } from '@/lib/supabase/hooks';
 import {
   ArrowLeft, Zap, Trophy, Code2, Rocket, GitMerge,
   Plus, Search, Heart, MessageCircle, Send, Loader2, AlertCircle, Trash2
@@ -47,8 +48,7 @@ export default function ActivityDetail({ params }: { params: Promise<{ id: strin
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentInput, setCommentInput] = useState('');
   const [posting, setPosting] = useState(false);
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [currentProfile, setCurrentProfile] = useState<any>(null);
+  const { profile: currentProfile, user: currentUser } = useProfile();
   const [activityOwnerId, setActivityOwnerId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,21 +60,23 @@ export default function ActivityDetail({ params }: { params: Promise<{ id: strin
       try {
         const supabase = createClient();
 
-        // Stage 1: Parallel fetch independent calls
+        // Fetch activity detail and interactions in parallel
         const [
-          authRes,
           item,
           actRowRes,
           lCountRes,
           commDataRes,
           allActivities,
+          myLikeRes,
         ] = await Promise.all([
-          supabase.auth.getUser(),
           fetchActivityById(id),
           supabase.from('activities').select('user_id').eq('id', id).single(),
           supabase.from('activity_likes').select('*', { count: 'exact', head: true }).eq('activity_id', id),
           supabase.from('activity_comments').select('*, profiles(name, handle, avatar)').eq('activity_id', id).order('created_at', { ascending: true }),
           fetchActivities(),
+          currentUser?.id
+            ? supabase.from('activity_likes').select('id').eq('activity_id', id).eq('user_id', currentUser.id).maybeSingle()
+            : Promise.resolve({ data: null }),
         ]);
 
         if (!item) {
@@ -82,29 +84,9 @@ export default function ActivityDetail({ params }: { params: Promise<{ id: strin
           return;
         }
 
-        const user = authRes.data?.user;
-
-        // Stage 2: User-dependent calls
-        let profData = null;
-        let isUserLiked = false;
-
-        if (user) {
-          const [profRes, myLikeRes] = await Promise.all([
-            supabase.from('profiles').select('name, handle, avatar').eq('id', user.id).single(),
-            supabase.from('activity_likes').select('id').eq('activity_id', id).eq('user_id', user.id).maybeSingle(),
-          ]);
-          profData = profRes.data;
-          isUserLiked = !!myLikeRes.data;
-        }
-
         if (!isMounted) return;
 
-        if (user) {
-          setCurrentUser(user);
-          setCurrentProfile(profData);
-          setLiked(isUserLiked);
-        }
-
+        setLiked(!!myLikeRes?.data);
         setActivity(item);
         if (actRowRes.data) setActivityOwnerId(actRowRes.data.user_id);
         setLikeCount(lCountRes.count || 0);
@@ -122,6 +104,22 @@ export default function ActivityDetail({ params }: { params: Promise<{ id: strin
       }
     }
     load();
+
+    // Sync liked state when currentUser is resolved
+    if (currentUser?.id) {
+      const supabase = createClient();
+      supabase
+        .from('activity_likes')
+        .select('id')
+        .eq('activity_id', id)
+        .eq('user_id', currentUser.id)
+        .maybeSingle()
+        .then((res: { data: { id: string } | null }) => {
+          if (isMounted && res.data) {
+            setLiked(true);
+          }
+        });
+    }
 
     // Realtime comments
     const supabase = createClient();
@@ -155,7 +153,7 @@ export default function ActivityDetail({ params }: { params: Promise<{ id: strin
       isMounted = false;
       supabase.removeChannel(channel);
     };
-  }, [id]);
+  }, [id, currentUser?.id]);
 
   const handleLike = async () => {
     if (liking || !currentUser) return;

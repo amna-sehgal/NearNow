@@ -156,7 +156,8 @@ export async function fetchCommunityMembers(communityId: string): Promise<UserPr
         joined_at,
         profiles (*)
       `)
-      .eq('community_id', communityId);
+      .eq('community_id', communityId)
+      .limit(100);
 
     if (!error && data) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -277,7 +278,8 @@ export async function fetchCommunityPosts(communityId: string): Promise<Communit
         profiles:author_id ( name, handle, avatar, college )
       `)
       .eq('community_id', communityId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(50);
 
     if (!error && data) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
