@@ -18,6 +18,9 @@ export interface Activity {
   xp?: number;
   timestamp: string;
   isFresh?: boolean;
+  likeCount?: number;
+  commentCount?: number;
+  isLiked?: boolean;
 }
 
 export interface Project {

@@ -28,13 +28,22 @@ export default function ActivityCard({ activity, blurred, delay = 0, showLikes =
   const config = typeConfig[activity.type as keyof typeof typeConfig] || typeConfig.earned_xp;
   const Icon = config.icon;
 
-  const [liked, setLiked] = useState(false);
-  const [likeCount, setLikeCount] = useState(0);
-  const [commentCount, setCommentCount] = useState(0);
+  const [likedOverride, setLikedOverride] = useState<boolean | null>(null);
+  const [likeCountOverride, setLikeCountOverride] = useState<number | null>(null);
+  const [commentCountOverride, setCommentCountOverride] = useState<number | null>(null);
   const [liking, setLiking] = useState(false);
+
+  const liked = likedOverride !== null ? likedOverride : (activity.isLiked ?? false);
+  const likeCount = likeCountOverride !== null ? likeCountOverride : (activity.likeCount ?? 0);
+  const commentCount = commentCountOverride !== null ? commentCountOverride : (activity.commentCount ?? 0);
 
   useEffect(() => {
     if (blurred || !showLikes) return;
+    // Skip per-card queries if batched like and comment counts were provided by parent
+    if (activity.likeCount !== undefined && activity.commentCount !== undefined && activity.isLiked !== undefined) {
+      return;
+    }
+
     const load = async () => {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
@@ -44,14 +53,14 @@ export default function ActivityCard({ activity, blurred, delay = 0, showLikes =
         .from('activity_likes')
         .select('*', { count: 'exact', head: true })
         .eq('activity_id', activity.id);
-      setLikeCount(lCount || 0);
+      setLikeCountOverride(lCount || 0);
 
       // Get comment count
       const { count: cCount } = await supabase
         .from('activity_comments')
         .select('*', { count: 'exact', head: true })
         .eq('activity_id', activity.id);
-      setCommentCount(cCount || 0);
+      setCommentCountOverride(cCount || 0);
 
       // Check if current user liked
       if (user) {
@@ -61,11 +70,11 @@ export default function ActivityCard({ activity, blurred, delay = 0, showLikes =
           .eq('activity_id', activity.id)
           .eq('user_id', user.id)
           .maybeSingle();
-        setLiked(!!myLike);
+        setLikedOverride(!!myLike);
       }
     };
     load();
-  }, [activity.id, blurred, showLikes]);
+  }, [activity.id, activity.likeCount, activity.commentCount, activity.isLiked, blurred, showLikes]);
 
   const handleLike = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -84,16 +93,16 @@ export default function ActivityCard({ activity, blurred, delay = 0, showLikes =
         .delete()
         .eq('activity_id', activity.id)
         .eq('user_id', user.id);
-      setLiked(false);
-      setLikeCount(prev => Math.max(0, prev - 1));
+      setLikedOverride(false);
+      setLikeCountOverride(Math.max(0, likeCount - 1));
     } else {
       // Like
       await supabase.from('activity_likes').insert({
         activity_id: activity.id,
         user_id: user.id,
       });
-      setLiked(true);
-      setLikeCount(prev => prev + 1);
+      setLikedOverride(true);
+      setLikeCountOverride(likeCount + 1);
 
       // Notify post owner — get owner first
       const { data: activityRow } = await supabase

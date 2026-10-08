@@ -35,7 +35,12 @@ export async function fetchActivities(options?: {
       query = query.eq('type', options.filter);
     }
 
-    const { data, error } = await query;
+    const [{ data, error }, { data: authData }] = await Promise.all([
+      query,
+      supabase.auth.getUser(),
+    ]);
+
+    const user = authData?.user;
 
     if (error || !data || data.length === 0) {
       // Fallback to local mock data filtered client-side if Supabase has no data or error
@@ -50,6 +55,38 @@ export async function fetchActivities(options?: {
       });
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const actIds = data.map((r: any) => r.id);
+
+    // Batch fetch likes and comments for all activities in parallel
+    const [likesRes, commentsRes] = await Promise.all([
+      supabase
+        .from('activity_likes')
+        .select('activity_id, user_id')
+        .in('activity_id', actIds),
+      supabase
+        .from('activity_comments')
+        .select('activity_id')
+        .in('activity_id', actIds),
+    ]);
+
+    const likeCounts: Record<string, number> = {};
+    const userLikedSet = new Set<string>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (likesRes.data || []).forEach((like: any) => {
+      likeCounts[like.activity_id] = (likeCounts[like.activity_id] || 0) + 1;
+      if (user && like.user_id === user.id) {
+        userLikedSet.add(like.activity_id);
+      }
+    });
+
+    const commentCounts: Record<string, number> = {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (commentsRes.data || []).forEach((comm: any) => {
+      commentCounts[comm.activity_id] = (commentCounts[comm.activity_id] || 0) + 1;
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mappedActivities: Activity[] = data.map((row: any) => {
       const profile = Array.isArray(row.profiles) ? row.profiles[0] : (row.profiles || {});
       const createdAt = row.created_at;
@@ -70,6 +107,9 @@ export async function fetchActivities(options?: {
         xp: row.xp || undefined,
         timestamp: formatRelativeTime(createdAt),
         isFresh,
+        likeCount: likeCounts[row.id] || 0,
+        commentCount: commentCounts[row.id] || 0,
+        isLiked: userLikedSet.has(row.id),
       };
     });
 
