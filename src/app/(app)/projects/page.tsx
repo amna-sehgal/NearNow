@@ -91,7 +91,8 @@ export default function ProjectsPage() {
       const { data } = await supabase
         .from('projects')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(50);
       setProjects(data || []);
       setLoading(false);
     };

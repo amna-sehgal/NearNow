@@ -51,15 +51,17 @@ export default function MatchPage() {
       if (!user) return;
       const supabase = createClient();
 
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('*')
-        .neq('id', user.id);
-
-      const { data: conns } = await supabase
-        .from('connections')
-        .select('sender_id, receiver_id, status')
-        .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`);
+      const [{ data: profiles }, { data: conns }] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('*')
+          .neq('id', user.id)
+          .limit(50),
+        supabase
+          .from('connections')
+          .select('sender_id, receiver_id, status')
+          .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`),
+      ]);
 
       // Build status map for every connection
       const statusMap: Record<string, ConnStatus> = {};

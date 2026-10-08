@@ -84,13 +84,15 @@ export async function fetchMissions(category?: string): Promise<Mission[]> {
   try {
     const supabase = await createClient();
 
-    let query = supabase.from('missions').select('*');
+    let query = supabase.from('missions').select('*').limit(50);
     if (category && category !== 'All') {
       query = query.eq('category', category);
     }
 
-    const { data: rows, error } = await query;
-    const { data: { user } } = await supabase.auth.getUser();
+    const [{ data: rows, error }, { data: { user } }] = await Promise.all([
+      query,
+      supabase.auth.getUser(),
+    ]);
 
     let completedIds: string[] = [];
     if (user) {
@@ -133,9 +135,11 @@ export async function fetchMissions(category?: string): Promise<Mission[]> {
 export async function fetchMissionById(id: string): Promise<Mission | null> {
   try {
     const supabase = await createClient();
-    const { data: row } = await supabase.from('missions').select('*').eq('id', id).single();
+    const [{ data: row }, { data: { user } }] = await Promise.all([
+      supabase.from('missions').select('*').eq('id', id).single(),
+      supabase.auth.getUser(),
+    ]);
 
-    const { data: { user } } = await supabase.auth.getUser();
     let isCompleted = false;
     if (user) {
       const { data: um } = await supabase

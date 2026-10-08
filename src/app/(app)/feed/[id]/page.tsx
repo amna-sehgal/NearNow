@@ -60,63 +60,61 @@ export default function ActivityDetail({ params }: { params: Promise<{ id: strin
       try {
         const supabase = createClient();
 
-        // Get current user
-        const { data: { user } } = await supabase.auth.getUser();
+        // Stage 1: Parallel fetch independent calls
+        const [
+          authRes,
+          item,
+          actRowRes,
+          lCountRes,
+          commDataRes,
+          allActivities,
+        ] = await Promise.all([
+          supabase.auth.getUser(),
+          fetchActivityById(id),
+          supabase.from('activities').select('user_id').eq('id', id).single(),
+          supabase.from('activity_likes').select('*', { count: 'exact', head: true }).eq('activity_id', id),
+          supabase.from('activity_comments').select('*, profiles(name, handle, avatar)').eq('activity_id', id).order('created_at', { ascending: true }),
+          fetchActivities(),
+        ]);
+
+        if (!item) {
+          if (isMounted) setNotFoundState(true);
+          return;
+        }
+
+        const user = authRes.data?.user;
+
+        // Stage 2: User-dependent calls
+        let profData = null;
+        let isUserLiked = false;
+
+        if (user) {
+          const [profRes, myLikeRes] = await Promise.all([
+            supabase.from('profiles').select('name, handle, avatar').eq('id', user.id).single(),
+            supabase.from('activity_likes').select('id').eq('activity_id', id).eq('user_id', user.id).maybeSingle(),
+          ]);
+          profData = profRes.data;
+          isUserLiked = !!myLikeRes.data;
+        }
+
+        if (!isMounted) return;
+
         if (user) {
           setCurrentUser(user);
-          const { data: prof } = await supabase
-            .from('profiles')
-            .select('name, handle, avatar')
-            .eq('id', user.id)
-            .single();
-          setCurrentProfile(prof);
+          setCurrentProfile(profData);
+          setLiked(isUserLiked);
         }
 
-        // Fetch activity
-        const item = await fetchActivityById(id);
-        if (!item) { if (isMounted) setNotFoundState(true); return; }
-        if (isMounted) setActivity(item);
+        setActivity(item);
+        if (actRowRes.data) setActivityOwnerId(actRowRes.data.user_id);
+        setLikeCount(lCountRes.count || 0);
+        setComments(commDataRes.data || []);
 
-        // Get activity owner id
-        const { data: actRow } = await supabase
-          .from('activities')
-          .select('user_id')
-          .eq('id', id)
-          .single();
-        if (actRow && isMounted) setActivityOwnerId(actRow.user_id);
-
-        // Load likes
-        const { count: lCount } = await supabase
-          .from('activity_likes')
-          .select('*', { count: 'exact', head: true })
-          .eq('activity_id', id);
-        if (isMounted) setLikeCount(lCount || 0);
-
-        if (user) {
-          const { data: myLike } = await supabase
-            .from('activity_likes')
-            .select('id')
-            .eq('activity_id', id)
-            .eq('user_id', user.id)
-            .maybeSingle();
-          if (isMounted) setLiked(!!myLike);
-        }
-
-        // Load comments
-        const { data: commData } = await supabase
-          .from('activity_comments')
-          .select('*, profiles(name, handle, avatar)')
-          .eq('activity_id', id)
-          .order('created_at', { ascending: true });
-        if (isMounted) setComments(commData || []);
-
-        // Related
-        const all = await fetchActivities();
-        const rel = all.filter(a => a.id !== id && (
+        const rel = (allActivities || []).filter(a => a.id !== id && (
           a.user.college === item.user.college ||
           a.tags?.some(t => item.tags?.includes(t))
         )).slice(0, 3);
-        if (isMounted) setRelated(rel);
+        setRelated(rel);
       } catch {
         if (isMounted) setNotFoundState(true);
       } finally {

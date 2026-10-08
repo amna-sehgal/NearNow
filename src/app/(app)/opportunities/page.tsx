@@ -11,15 +11,23 @@ const TYPES = ['All', 'Hackathon', 'Grant', 'Bounty', 'Internship', 'Fellowship'
 export default function OpportunitiesPage() {
   const [activeType, setActiveType] = useState('All');
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
 
   useEffect(() => {
     let isMounted = true;
     async function load() {
       setLoading(true);
       try {
-        const data = await fetchOpportunities({ type: activeType, search });
+        const data = await fetchOpportunities({ type: activeType, search: debouncedSearch });
         if (isMounted) setOpportunities(data);
       } catch (err) {
         console.error('[OpportunitiesPage Error]:', err);
@@ -29,7 +37,7 @@ export default function OpportunitiesPage() {
     }
     load();
     return () => { isMounted = false; };
-  }, [activeType, search]);
+  }, [activeType, debouncedSearch]);
 
   return (
     <div className="min-h-screen" style={{ background: '#0D0D0F' }}>

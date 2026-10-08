@@ -18,6 +18,7 @@ export default function CommunitiesPage() {
   const [communities, setCommunities] = useState<Community[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [search, setSearch] = useState<string>('');
+  const [debouncedSearch, setDebouncedSearch] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [joiningId, setJoiningId] = useState<string | null>(null);
@@ -32,10 +33,17 @@ export default function CommunitiesPage() {
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
     let isMounted = true;
     async function load() {
       setLoading(true);
-      const data = await fetchCommunities(selectedCategory, search);
+      const data = await fetchCommunities(selectedCategory, debouncedSearch);
       if (isMounted) {
         setCommunities(data);
         setLoading(false);
@@ -43,7 +51,7 @@ export default function CommunitiesPage() {
     }
     load();
     return () => { isMounted = false; };
-  }, [selectedCategory, search]);
+  }, [selectedCategory, debouncedSearch]);
 
   const handleToggleJoin = async (c: Community) => {
     setJoiningId(c.id);

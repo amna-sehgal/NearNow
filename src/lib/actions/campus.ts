@@ -158,14 +158,15 @@ export async function fetchCampusStats(college: string = ALL_CAMPUSES_LABEL): Pr
       query = query.ilike('college', escapeIlike(college.trim()));
     }
 
-    const { data: profiles, error: pErr } = await query;
-
     let projQuery = supabase.from('projects').select('id, college');
     if (college !== ALL_CAMPUSES_LABEL) {
       projQuery = projQuery.ilike('college', escapeIlike(college.trim()));
     }
 
-    const { data: projects } = await projQuery;
+    const [{ data: profiles, error: pErr }, { data: projects }] = await Promise.all([
+      query,
+      projQuery,
+    ]);
 
     if (!pErr && profiles) {
       const activeBuilders = profiles.length;
@@ -202,7 +203,7 @@ export async function fetchCampusBuilders(college: string = ALL_CAMPUSES_LABEL):
   try {
     const supabase = await createClient();
 
-    let query = supabase.from('profiles').select('*').order('reputation', { ascending: false });
+    let query = supabase.from('profiles').select('*').order('reputation', { ascending: false }).limit(50);
     if (college !== ALL_CAMPUSES_LABEL) {
       query = query.ilike('college', escapeIlike(college.trim()));
     }
@@ -254,7 +255,8 @@ export async function fetchCampusProjects(college: string = ALL_CAMPUSES_LABEL):
         *,
         profiles:owner_id ( id, name, handle, avatar, college )
       `)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(50);
 
     if (college !== ALL_CAMPUSES_LABEL) {
       query = query.ilike('college', escapeIlike(college.trim()));

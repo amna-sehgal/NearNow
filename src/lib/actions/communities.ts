@@ -40,14 +40,16 @@ export interface CommunityPost {
 export async function fetchCommunities(category?: string, search?: string): Promise<Community[]> {
   try {
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
 
-    let query = supabase.from('communities').select('*').order('created_at', { ascending: false });
+    let query = supabase.from('communities').select('*').order('created_at', { ascending: false }).limit(50);
     if (category && category !== 'All') {
       query = query.eq('category', category);
     }
 
-    const { data: rows, error } = await query;
+    const [{ data: rows, error }, { data: { user } }] = await Promise.all([
+      query,
+      supabase.auth.getUser(),
+    ]);
 
     let joinedIds: string[] = [];
     if (user) {

@@ -28,7 +28,8 @@ export async function fetchActivities(options?: {
           college
         )
       `)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(50);
 
     if (options?.filter && options.filter !== 'all') {
       query = query.eq('type', options.filter);
