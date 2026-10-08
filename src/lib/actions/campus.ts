@@ -91,8 +91,8 @@ export async function fetchAvailableColleges(): Promise<string[]> {
     const supabase = await createClient();
 
     const [profilesRes, projectsRes] = await Promise.all([
-      supabase.from('profiles').select('college').not('college', 'is', null),
-      supabase.from('projects').select('college').not('college', 'is', null),
+      supabase.from('profiles').select('college').not('college', 'is', null).limit(200),
+      supabase.from('projects').select('college').not('college', 'is', null).limit(200),
     ]);
 
     const collegeMap = new Map<string, string>(); // lowercased -> formatted display name
@@ -153,24 +153,24 @@ export async function fetchCampusStats(college: string = ALL_CAMPUSES_LABEL): Pr
   try {
     const supabase = await createClient();
 
-    let query = supabase.from('profiles').select('reputation, xp, college');
+    let query = supabase.from('profiles').select('reputation, xp', { count: 'exact' });
     if (college !== ALL_CAMPUSES_LABEL) {
       query = query.ilike('college', escapeIlike(college.trim()));
     }
 
-    let projQuery = supabase.from('projects').select('id, college');
+    let projQuery = supabase.from('projects').select('*', { count: 'exact', head: true });
     if (college !== ALL_CAMPUSES_LABEL) {
       projQuery = projQuery.ilike('college', escapeIlike(college.trim()));
     }
 
-    const [{ data: profiles, error: pErr }, { data: projects }] = await Promise.all([
+    const [{ data: profiles, count: pCount, error: pErr }, { count: projCount }] = await Promise.all([
       query,
       projQuery,
     ]);
 
     if (!pErr && profiles) {
-      const activeBuilders = profiles.length;
-      const liveProjects = projects ? projects.length : 0;
+      const activeBuilders = pCount ?? profiles.length;
+      const liveProjects = projCount ?? 0;
       const totalReputation = profiles.reduce((sum, p) => sum + (p.reputation || 0), 0);
       const totalXp = profiles.reduce((sum, p) => sum + (p.xp || 0), 0);
       const hackathonTeams = Math.max(0, Math.floor(liveProjects * 0.4));
@@ -203,7 +203,11 @@ export async function fetchCampusBuilders(college: string = ALL_CAMPUSES_LABEL):
   try {
     const supabase = await createClient();
 
-    let query = supabase.from('profiles').select('*').order('reputation', { ascending: false }).limit(50);
+    let query = supabase
+      .from('profiles')
+      .select('handle, name, avatar, college, year, location, bio, reputation, xp, xp_to_next, skills, looking_for, github, linkedin, portfolio')
+      .order('reputation', { ascending: false })
+      .limit(50);
     if (college !== ALL_CAMPUSES_LABEL) {
       query = query.ilike('college', escapeIlike(college.trim()));
     }
@@ -252,7 +256,21 @@ export async function fetchCampusProjects(college: string = ALL_CAMPUSES_LABEL):
     let query = supabase
       .from('projects')
       .select(`
-        *,
+        id,
+        name,
+        tagline,
+        description,
+        stack,
+        category,
+        status,
+        open_roles,
+        members,
+        college,
+        github_url,
+        live_url,
+        tasks,
+        xp_reward,
+        applicants,
         profiles:owner_id ( id, name, handle, avatar, college )
       `)
       .order('created_at', { ascending: false })
