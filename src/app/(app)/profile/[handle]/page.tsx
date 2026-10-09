@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { useProfile } from '@/lib/supabase/hooks';
 import { fetchUserBadges, fetchXpHistory, BadgeItem, XpLogItem } from '@/lib/actions/reputation';
+import { fetchActivities } from '@/lib/actions/activities';
+import { Activity } from '@/lib/data';
 import Avatar from '@/components/ui/Avatar';
 import Tag from '@/components/ui/Tag';
 import ActivityCard from '@/components/ui/ActivityCard';
@@ -43,8 +45,7 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
   const [profile, setProfile] = useState<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [projects, setProjects] = useState<any[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [activities, setActivities] = useState<any[]>([]);
+  const [activities, setActivities] = useState<Activity[]>([]);
   const [badges, setBadges] = useState<BadgeItem[]>([]);
   const [xpLogs, setXpLogs] = useState<XpLogItem[]>([]);
   const [showXpModal, setShowXpModal] = useState<boolean>(false);
@@ -65,37 +66,36 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
       if (!profileData) { setLoading(false); return; }
       setProfile(profileData);
 
-      const [bData, xData] = await Promise.all([
+      const [
+        bData,
+        xData,
+        activityData,
+        { data: projectData },
+        { data: ownedProjects },
+      ] = await Promise.all([
         fetchUserBadges(handle),
         fetchXpHistory(profileData.id),
+        fetchActivities({ userId: profileData.id, limit: 10 }),
+        supabase
+          .from('projects')
+          .select('*')
+          .contains('members', JSON.stringify([{ handle }]))
+          .order('created_at', { ascending: false })
+          .limit(50),
+        supabase
+          .from('projects')
+          .select('*')
+          .eq('owner_id', profileData.id)
+          .order('created_at', { ascending: false })
+          .limit(50),
       ]);
       setBadges(bData);
       setXpLogs(xData);
-
-      const { data: projectData } = await supabase
-        .from('projects')
-        .select('*')
-        .contains('members', JSON.stringify([{ handle }]))
-        .order('created_at', { ascending: false });
-
-      const { data: ownedProjects } = await supabase
-        .from('projects')
-        .select('*')
-        .eq('owner_id', profileData.id)
-        .order('created_at', { ascending: false });
+      setActivities(activityData || []);
 
       const allProjects = [...(ownedProjects || []), ...(projectData || [])];
       const unique = allProjects.filter((p, i, a) => a.findIndex(x => x.id === p.id) === i);
       setProjects(unique);
-
-      const { data: activityData } = await supabase
-        .from('activities')
-        .select('*')
-        .eq('user_id', profileData.id)
-        .order('created_at', { ascending: false })
-        .limit(10);
-
-      setActivities(activityData || []);
       setLoading(false);
     };
     fetch();
@@ -169,12 +169,24 @@ export default function ProfilePage({ params }: { params: Promise<{ handle: stri
   const xpPercent = Math.min(((profile?.xp || 0) / (profile?.xp_to_next || 100)) * 100, 100);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const toCard = (a: any) => ({
-    id: a.id, type: a.type,
-    user: { name: profile.name, handle: profile.handle, avatar: profile.avatar || 'NN', college: profile.college || '' },
-    content: a.content, meta: a.meta, tags: a.tags || [], xp: a.xp,
-    timestamp: new Date(a.created_at).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }),
-    isFresh: false,
+  const toCard = (a: any): Activity => ({
+    id: a.id,
+    type: a.type,
+    user: {
+      name: profile?.name || a.user?.name || 'Anonymous Student',
+      handle: profile?.handle || a.user?.handle || 'builder',
+      avatar: profile?.avatar || a.user?.avatar || 'NN',
+      college: profile?.college || a.user?.college || '',
+    },
+    content: a.content,
+    meta: a.meta,
+    tags: a.tags || [],
+    xp: a.xp,
+    timestamp: a.timestamp || (a.created_at ? new Date(a.created_at).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }) : ''),
+    isFresh: a.isFresh ?? false,
+    likeCount: a.likeCount ?? 0,
+    commentCount: a.commentCount ?? 0,
+    isLiked: a.isLiked ?? false,
   });
 
   return (

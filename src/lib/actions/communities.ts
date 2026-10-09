@@ -40,14 +40,16 @@ export interface CommunityPost {
 export async function fetchCommunities(category?: string, search?: string): Promise<Community[]> {
   try {
     const supabase = await createClient();
-    const { data: { user } } = await supabase.auth.getUser();
 
-    let query = supabase.from('communities').select('*').order('created_at', { ascending: false });
+    let query = supabase.from('communities').select('*').order('created_at', { ascending: false }).limit(50);
     if (category && category !== 'All') {
       query = query.eq('category', category);
     }
 
-    const { data: rows, error } = await query;
+    const [{ data: rows, error }, { data: { user } }] = await Promise.all([
+      query,
+      supabase.auth.getUser(),
+    ]);
 
     let joinedIds: string[] = [];
     if (user) {
@@ -154,7 +156,8 @@ export async function fetchCommunityMembers(communityId: string): Promise<UserPr
         joined_at,
         profiles (*)
       `)
-      .eq('community_id', communityId);
+      .eq('community_id', communityId)
+      .limit(100);
 
     if (!error && data) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -275,7 +278,8 @@ export async function fetchCommunityPosts(communityId: string): Promise<Communit
         profiles:author_id ( name, handle, avatar, college )
       `)
       .eq('community_id', communityId)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(50);
 
     if (!error && data) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -1,7 +1,8 @@
 'use client';
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { createClient } from '@/lib/supabase/client';
+import { fetchActivities } from '@/lib/actions/activities';
+import { Activity } from '@/lib/data';
 import ActivityCard from '@/components/ui/ActivityCard';
 import { Plus, Search, Zap, Trophy, Code2, Rocket, GitMerge } from 'lucide-react';
 
@@ -15,58 +16,36 @@ const FILTERS = [
 ];
 
 export default function FeedPage() {
-  const [activities, setActivities] = useState<any[]>([]);
+  const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    const fetchActivities = async () => {
-      const supabase = createClient();
-      let query = supabase
-        .from('activities')
-        .select(`*, profiles(name, handle, avatar, college)`)
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      if (activeFilter !== 'all') query = query.eq('type', activeFilter);
-
-      const { data } = await query;
-      setActivities(data || []);
-      setLoading(false);
+    let isMounted = true;
+    const load = async () => {
+      setLoading(true);
+      const data = await fetchActivities({ filter: activeFilter });
+      if (isMounted) {
+        setActivities(data || []);
+        setLoading(false);
+      }
     };
 
-    fetchActivities();
+    load();
 
-    return () => {};
+    return () => { isMounted = false; };
   }, [activeFilter]);
 
   const filtered = activities.filter(a => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
     return (
-      a.profiles?.name?.toLowerCase().includes(q) ||
+      a.user.name?.toLowerCase().includes(q) ||
+      a.user.handle?.toLowerCase().includes(q) ||
       a.content?.toLowerCase().includes(q) ||
       a.tags?.some((t: string) => t.toLowerCase().includes(q))
     );
-  });
-
-  // Map DB row → ActivityCard shape
-  const toCard = (a: any) => ({
-    id: a.id,
-    type: a.type,
-    user: {
-      name: a.profiles?.name || 'Builder',
-      handle: a.profiles?.handle || 'user',
-      avatar: a.profiles?.avatar || 'NN',
-      college: a.profiles?.college || '',
-    },
-    content: a.content,
-    meta: a.meta,
-    tags: a.tags || [],
-    xp: a.xp,
-    timestamp: new Date(a.created_at).toLocaleString('en-IN', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'short' }),
-    isFresh: Date.now() - new Date(a.created_at).getTime() < 1000 * 60 * 30,
   });
 
   return (
@@ -137,7 +116,7 @@ export default function FeedPage() {
             {filtered.map((a, i) => (
               <div key={a.id} style={{ animation: `float-up 0.5s ease forwards`, animationDelay: `${i * 40}ms`, opacity: 0 }}>
                 <Link href={`/feed/${a.id}`}>
-                  <ActivityCard activity={toCard(a)} />
+                  <ActivityCard activity={a} />
                 </Link>
               </div>
             ))}

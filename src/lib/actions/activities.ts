@@ -6,6 +6,8 @@ import { Activity, ACTIVITIES, formatRelativeTime } from '@/lib/data';
 export async function fetchActivities(options?: {
   filter?: string;
   search?: string;
+  userId?: string;
+  limit?: number;
 }): Promise<Activity[]> {
   try {
     const supabase = await createClient();
@@ -28,15 +30,28 @@ export async function fetchActivities(options?: {
           college
         )
       `)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(options?.limit ?? 50);
+
+    if (options?.userId) {
+      query = query.eq('user_id', options.userId);
+    }
 
     if (options?.filter && options.filter !== 'all') {
       query = query.eq('type', options.filter);
     }
 
-    const { data, error } = await query;
+    const [{ data, error }, { data: authData }] = await Promise.all([
+      query,
+      supabase.auth.getUser(),
+    ]);
+
+    const user = authData?.user;
 
     if (error || !data || data.length === 0) {
+      if (options?.userId) {
+        return [];
+      }
       // Fallback to local mock data filtered client-side if Supabase has no data or error
       const search = options?.search?.toLowerCase();
       return ACTIVITIES.filter(a => {
@@ -49,6 +64,38 @@ export async function fetchActivities(options?: {
       });
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const actIds = data.map((r: any) => r.id);
+
+    // Batch fetch likes and comments for all activities in parallel
+    const [likesRes, commentsRes] = await Promise.all([
+      supabase
+        .from('activity_likes')
+        .select('activity_id, user_id')
+        .in('activity_id', actIds),
+      supabase
+        .from('activity_comments')
+        .select('activity_id')
+        .in('activity_id', actIds),
+    ]);
+
+    const likeCounts: Record<string, number> = {};
+    const userLikedSet = new Set<string>();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (likesRes.data || []).forEach((like: any) => {
+      likeCounts[like.activity_id] = (likeCounts[like.activity_id] || 0) + 1;
+      if (user && like.user_id === user.id) {
+        userLikedSet.add(like.activity_id);
+      }
+    });
+
+    const commentCounts: Record<string, number> = {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (commentsRes.data || []).forEach((comm: any) => {
+      commentCounts[comm.activity_id] = (commentCounts[comm.activity_id] || 0) + 1;
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const mappedActivities: Activity[] = data.map((row: any) => {
       const profile = Array.isArray(row.profiles) ? row.profiles[0] : (row.profiles || {});
       const createdAt = row.created_at;
@@ -69,6 +116,9 @@ export async function fetchActivities(options?: {
         xp: row.xp || undefined,
         timestamp: formatRelativeTime(createdAt),
         isFresh,
+        likeCount: likeCounts[row.id] || 0,
+        commentCount: commentCounts[row.id] || 0,
+        isLiked: userLikedSet.has(row.id),
       };
     });
 
@@ -84,6 +134,9 @@ export async function fetchActivities(options?: {
 
     return mappedActivities;
   } catch {
+    if (options?.userId) {
+      return [];
+    }
     return ACTIVITIES;
   }
 }

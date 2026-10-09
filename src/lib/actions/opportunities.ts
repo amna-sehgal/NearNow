@@ -91,7 +91,7 @@ export async function fetchOpportunities(options?: {
   try {
     const supabase = await createClient();
 
-    let query = supabase.from('opportunities').select('*').order('created_at', { ascending: false });
+    let query = supabase.from('opportunities').select('*').order('created_at', { ascending: false }).limit(50);
 
     if (options?.type && options.type !== 'All') {
       query = query.eq('type', options.type);

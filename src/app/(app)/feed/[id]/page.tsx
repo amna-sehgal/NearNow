@@ -7,6 +7,7 @@ import ActivityCard from '@/components/ui/ActivityCard';
 import { Activity } from '@/lib/data';
 import { fetchActivityById, fetchActivities } from '@/lib/actions/activities';
 import { createClient } from '@/lib/supabase/client';
+import { useProfile } from '@/lib/supabase/hooks';
 import {
   ArrowLeft, Zap, Trophy, Code2, Rocket, GitMerge,
   Plus, Search, Heart, MessageCircle, Send, Loader2, AlertCircle, Trash2
@@ -47,8 +48,7 @@ export default function ActivityDetail({ params }: { params: Promise<{ id: strin
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentInput, setCommentInput] = useState('');
   const [posting, setPosting] = useState(false);
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [currentProfile, setCurrentProfile] = useState<any>(null);
+  const { profile: currentProfile, user: currentUser } = useProfile();
   const [activityOwnerId, setActivityOwnerId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,63 +60,43 @@ export default function ActivityDetail({ params }: { params: Promise<{ id: strin
       try {
         const supabase = createClient();
 
-        // Get current user
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user) {
-          setCurrentUser(user);
-          const { data: prof } = await supabase
-            .from('profiles')
-            .select('name, handle, avatar')
-            .eq('id', user.id)
-            .single();
-          setCurrentProfile(prof);
+        // Fetch activity detail and interactions in parallel
+        const [
+          item,
+          actRowRes,
+          lCountRes,
+          commDataRes,
+          allActivities,
+          myLikeRes,
+        ] = await Promise.all([
+          fetchActivityById(id),
+          supabase.from('activities').select('user_id').eq('id', id).single(),
+          supabase.from('activity_likes').select('*', { count: 'exact', head: true }).eq('activity_id', id),
+          supabase.from('activity_comments').select('*, profiles(name, handle, avatar)').eq('activity_id', id).order('created_at', { ascending: true }),
+          fetchActivities(),
+          currentUser?.id
+            ? supabase.from('activity_likes').select('id').eq('activity_id', id).eq('user_id', currentUser.id).maybeSingle()
+            : Promise.resolve({ data: null }),
+        ]);
+
+        if (!item) {
+          if (isMounted) setNotFoundState(true);
+          return;
         }
 
-        // Fetch activity
-        const item = await fetchActivityById(id);
-        if (!item) { if (isMounted) setNotFoundState(true); return; }
-        if (isMounted) setActivity(item);
+        if (!isMounted) return;
 
-        // Get activity owner id
-        const { data: actRow } = await supabase
-          .from('activities')
-          .select('user_id')
-          .eq('id', id)
-          .single();
-        if (actRow && isMounted) setActivityOwnerId(actRow.user_id);
+        setLiked(!!myLikeRes?.data);
+        setActivity(item);
+        if (actRowRes.data) setActivityOwnerId(actRowRes.data.user_id);
+        setLikeCount(lCountRes.count || 0);
+        setComments(commDataRes.data || []);
 
-        // Load likes
-        const { count: lCount } = await supabase
-          .from('activity_likes')
-          .select('*', { count: 'exact', head: true })
-          .eq('activity_id', id);
-        if (isMounted) setLikeCount(lCount || 0);
-
-        if (user) {
-          const { data: myLike } = await supabase
-            .from('activity_likes')
-            .select('id')
-            .eq('activity_id', id)
-            .eq('user_id', user.id)
-            .maybeSingle();
-          if (isMounted) setLiked(!!myLike);
-        }
-
-        // Load comments
-        const { data: commData } = await supabase
-          .from('activity_comments')
-          .select('*, profiles(name, handle, avatar)')
-          .eq('activity_id', id)
-          .order('created_at', { ascending: true });
-        if (isMounted) setComments(commData || []);
-
-        // Related
-        const all = await fetchActivities();
-        const rel = all.filter(a => a.id !== id && (
+        const rel = (allActivities || []).filter(a => a.id !== id && (
           a.user.college === item.user.college ||
           a.tags?.some(t => item.tags?.includes(t))
         )).slice(0, 3);
-        if (isMounted) setRelated(rel);
+        setRelated(rel);
       } catch {
         if (isMounted) setNotFoundState(true);
       } finally {
@@ -124,6 +104,22 @@ export default function ActivityDetail({ params }: { params: Promise<{ id: strin
       }
     }
     load();
+
+    // Sync liked state when currentUser is resolved
+    if (currentUser?.id) {
+      const supabase = createClient();
+      supabase
+        .from('activity_likes')
+        .select('id')
+        .eq('activity_id', id)
+        .eq('user_id', currentUser.id)
+        .maybeSingle()
+        .then((res: { data: { id: string } | null }) => {
+          if (isMounted && res.data) {
+            setLiked(true);
+          }
+        });
+    }
 
     // Realtime comments
     const supabase = createClient();
@@ -157,7 +153,7 @@ export default function ActivityDetail({ params }: { params: Promise<{ id: strin
       isMounted = false;
       supabase.removeChannel(channel);
     };
-  }, [id]);
+  }, [id, currentUser?.id]);
 
   const handleLike = async () => {
     if (liking || !currentUser) return;

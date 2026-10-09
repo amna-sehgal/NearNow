@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import { createClient } from './client';
 import type { User, Session, AuthChangeEvent } from '@supabase/supabase-js';
+import { useProfileContext } from '@/components/layout/ProfileProvider';
 
 export interface Profile {
   id: string;
@@ -23,10 +24,13 @@ export interface Profile {
 }
 
 export function useUser() {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const profileCtx = useProfileContext();
+  const [user, setUser] = useState<User | null>(profileCtx?.user ?? null);
+  const [loading, setLoading] = useState(profileCtx ? false : true);
 
   useEffect(() => {
+    if (profileCtx) return;
+
     const supabase = createClient();
 
     supabase.auth.getSession().then((result: { data: { session: Session | null } }) => {
@@ -40,20 +44,25 @@ export function useUser() {
     });
 
     return () => data.subscription.unsubscribe();
-  }, []);
+  }, [profileCtx]);
+
+  if (profileCtx) {
+    return { user: profileCtx.user, loading: false };
+  }
 
   return { user, loading };
 }
 
 export function useProfile() {
+  const profileCtx = useProfileContext();
   const { user, loading: userLoading } = useUser();
-  const [profile, setProfile] = useState<Profile | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<Profile | null>(profileCtx?.profile ?? null);
 
   useEffect(() => {
-    if (userLoading) return;
-    if (!user) { setLoading(false); return; }
+    if (profileCtx) return;
+    if (userLoading || !user) return;
 
+    let isMounted = true;
     const supabase = createClient();
     supabase
       .from('profiles')
@@ -61,10 +70,17 @@ export function useProfile() {
       .eq('id', user.id)
       .single()
       .then((result: { data: Profile | null }) => {
-        setProfile(result.data);
-        setLoading(false);
+        if (isMounted) {
+          setProfile(result.data);
+        }
       });
-  }, [user, userLoading]);
+    return () => { isMounted = false; };
+  }, [profileCtx, user, userLoading]);
 
-  return { profile, user, loading };
+  if (profileCtx) {
+    return { profile: profileCtx.profile, user: profileCtx.user, loading: false };
+  }
+
+  const effectiveLoading = userLoading || (!!user && profile === null);
+  return { profile, user, loading: effectiveLoading };
 }

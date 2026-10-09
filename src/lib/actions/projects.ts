@@ -25,7 +25,8 @@ export async function fetchProjects(options?: {
           college
         )
       `)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(50);
 
     if (options?.category && options.category !== 'All') {
       query = query.ilike('category', `%${options.category}%`);
